@@ -1,0 +1,2 @@
+# AutoOralCalculation
+一款为小猿口算量身定制的Xposed模块
