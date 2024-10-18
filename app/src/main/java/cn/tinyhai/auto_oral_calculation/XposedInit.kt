@@ -157,18 +157,22 @@ class XposedInit : IXposedHookLoadPackage, IXposedHookZygoteInit {
             List::class.java
         )
         val performNext = Runnable {
-            presenter?.let {
-                startExercise.invoke(it)
-                val answer = (getAnswers(it) as? List<*>)?.get(0).toString()
-                logI("answer: $answer")
-                commitAnswer.invoke(it, answer, null)
-                nextQuestion.invoke(it, true, emptyList<PointF>())
+            if (hostPrefs.getBoolean("auto_practice", true)) {
+                presenter?.let {
+                    startExercise.invoke(it)
+                    val answer = (getAnswers(it) as? List<*>)?.get(0).toString()
+                    logI("answer: $answer")
+                    commitAnswer.invoke(it, answer, null)
+                    nextQuestion.invoke(it, true, emptyList<PointF>())
+                }
             }
         }
         // afterAnimation
         XposedHelpers.findAndHookMethod(qep, "N", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                handler.post(performNext)
+                if (hostPrefs.getBoolean("auto_practice", true)) {
+                    handler.post(performNext)
+                }
             }
         })
         // afterLoadFinish
