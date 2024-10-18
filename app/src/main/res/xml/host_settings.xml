@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory android:title="功能">
+        <SwitchPreference
+            android:defaultValue="true"
+            android:key="auto_practice"
+            android:title="练习场自动答题" />
+        <SwitchPreference
+            android:defaultValue="true"
+            android:key="always_true_answer"
+            android:title="一切输入视为正确答案"
+            android:summary="手写输入识别结果永远为正确答案"/>
+        <ListPreference
+            android:defaultValue="0"
+            android:entries="@array/auto_answer_config"
+            android:entryValues="@array/auto_answer_config_values"
+            android:key="auto_answer_config"
+            android:dialogTitle="请选择"
+            android:title="自动答题配置" />
+        <EditTextPreference
+            android:enabled="false"
+            android:hint="请输入自定义的js代码"
+            android:key="custom_answer_config"
+            android:title="自定义答题"
+            android:summary="请确保代码能正确运行"/>
+    </PreferenceCategory>
+    <PreferenceCategory android:title="关于">
+        <Preference android:title="Github" android:key="github"/>
+        <Preference android:title="版本" android:key="version"/>
+    </PreferenceCategory>
+</PreferenceScreen>

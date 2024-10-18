@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen android:title="口算糕手" xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:title="跳转到设置界面"
+        android:summary="小猿口算->设置->口算糕手设置"
+        android:key="goto_settings"/>
+    <PreferenceCategory android:title="关于">
+        <Preference android:title="Github" android:key="github"/>
+        <Preference android:title="版本" android:key="version"/>
+    </PreferenceCategory>
+</PreferenceScreen>
