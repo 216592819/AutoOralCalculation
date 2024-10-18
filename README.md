@@ -7,3 +7,6 @@
 - 口算PK自动答题
 - 口算PK开局秒结算（显示为0秒）
 - 自定义答题脚本功能（有前端开发经验应该可以自己定义答题逻辑）
+
+### 演示视频
+[传送门](https://www.bilibili.com/video/BV14tCUYcESM/?vd_source=6d1b1cd7a08cab7216c6e020fa240e30)
