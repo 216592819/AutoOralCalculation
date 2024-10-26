@@ -23,6 +23,13 @@
             android:key="custom_answer_config"
             android:title="自定义答题"
             android:summary="请确保代码能正确运行"/>
+        <EditTextPreference
+            android:enabled="false"
+            android:defaultValue="200"
+            android:key="quick_mode_interval"
+            android:hint="单位毫秒，默认值200"
+            android:title="极速模式模拟答题间隔"
+            android:inputType="number" />
     </PreferenceCategory>
     <PreferenceCategory android:title="关于">
         <Preference android:title="Github" android:key="github"/>

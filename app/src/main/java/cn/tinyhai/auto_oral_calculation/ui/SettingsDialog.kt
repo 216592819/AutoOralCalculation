@@ -3,12 +3,10 @@ package cn.tinyhai.auto_oral_calculation.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
-import android.content.res.AssetManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import cn.tinyhai.auto_oral_calculation.XposedInit
 import cn.tinyhai.auto_oral_calculation.ui.fragment.SettingsFragment
-import cn.tinyhai.auto_oral_calculation.util.logI
 import de.robv.android.xposed.XposedHelpers
 
 class SettingsDialog(context: Context) : AlertDialog.Builder(context) {

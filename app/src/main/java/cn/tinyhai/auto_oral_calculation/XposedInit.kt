@@ -259,7 +259,8 @@ class XposedInit : IXposedHookLoadPackage, IXposedHookZygoteInit {
                             it.post {
                                 exerciseLoaded = false
 
-                                XposedBridge.invokeOriginalMethod(loadUrl, it, arrayOf("javascript: (function() { let backup_log=console.log;console.log=function(){return arguments.length>=1&&window.AutoOral&&window.AutoOral.log(arguments[0]),backup_log(arguments)}; })();"))
+                                val interval = runCatching { Integer.parseInt(hostPrefs.getString("quick_mode_interval", "200")!!) }.getOrElse { 200 }
+                                XposedBridge.invokeOriginalMethod(loadUrl, it, arrayOf("javascript: (function() { window._quick_mode_interval = $interval; let backup_log=console.log;console.log=function(){return arguments.length>=1&&window.AutoOral&&window.AutoOral.log(arguments[0]),backup_log(arguments)}; })();"))
 
                                 val index = runCatching { Integer.parseInt(hostPrefs.getString("auto_answer_config", "0")!!) }.getOrElse { 0 }
                                 val mode = AutoAnswerMode.entries[index]
