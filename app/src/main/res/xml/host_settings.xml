@@ -1,38 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
-    <PreferenceCategory android:title="功能">
+    <PreferenceCategory android:title="通用">
+        <SwitchPreference
+            android:defaultValue="true"
+            android:key="always_true_answer"
+            android:summary="手写输入识别结果永远为正确答案"
+            android:title="一切输入视为正确答案" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="练习">
         <SwitchPreference
             android:defaultValue="true"
             android:key="auto_practice"
             android:title="练习场自动答题" />
         <SwitchPreference
-            android:defaultValue="true"
-            android:key="always_true_answer"
-            android:title="一切输入视为正确答案"
-            android:summary="手写输入识别结果永远为正确答案"/>
+            android:defaultValue="false"
+            android:dependency="auto_practice"
+            android:key="auto_practice_quick"
+            android:title="极速答题" />
+        <SwitchPreference
+            android:defaultValue="false"
+            android:dependency="auto_practice"
+            android:key="auto_practice_cyclic"
+            android:title="循环答题" />
+        <EditTextPreference
+            android:defaultValue="1500"
+            android:dependency="auto_practice_cyclic"
+            android:key="auto_practice_cyclic_interval"
+            android:inputType="number"
+            android:hint="单位毫秒，默认值1500"
+            android:title="循环时间间隔" />
+    </PreferenceCategory>
+    <PreferenceCategory android:title="PK">
         <ListPreference
             android:defaultValue="0"
+            android:dialogTitle="请选择"
             android:entries="@array/auto_answer_config"
             android:entryValues="@array/auto_answer_config_values"
             android:key="auto_answer_config"
-            android:dialogTitle="请选择"
             android:title="自动答题配置" />
         <EditTextPreference
             android:enabled="false"
             android:hint="请输入自定义的js代码"
             android:key="custom_answer_config"
-            android:title="自定义答题"
-            android:summary="请确保代码能正确运行"/>
+            android:summary="请确保代码能正确运行"
+            android:title="自定义答题" />
         <EditTextPreference
-            android:enabled="false"
             android:defaultValue="200"
-            android:key="quick_mode_interval"
+            android:enabled="false"
             android:hint="单位毫秒，默认值200"
-            android:title="极速模式模拟答题间隔"
-            android:inputType="number" />
+            android:inputType="number"
+            android:key="quick_mode_interval"
+            android:title="极速模式模拟答题间隔" />
     </PreferenceCategory>
     <PreferenceCategory android:title="关于">
-        <Preference android:title="Github" android:key="github"/>
-        <Preference android:title="版本" android:key="version"/>
+        <Preference
+            android:key="github"
+            android:title="Github" />
+        <Preference
+            android:key="version"
+            android:title="版本" />
     </PreferenceCategory>
 </PreferenceScreen>

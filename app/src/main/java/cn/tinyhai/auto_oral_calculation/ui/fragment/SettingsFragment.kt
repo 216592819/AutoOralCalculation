@@ -17,10 +17,16 @@ import cn.tinyhai.auto_oral_calculation.util.openGithub
 class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
 
     private class Holder(manager: PreferenceManager) {
-        val autoPractice: SwitchPreference =
-            manager.findPreference("auto_practice") as SwitchPreference
         val alwaysTrue: SwitchPreference =
             manager.findPreference("always_true_answer") as SwitchPreference
+        val autoPractice: SwitchPreference =
+            manager.findPreference("auto_practice") as SwitchPreference
+        val autoPracticeQuick: SwitchPreference =
+            manager.findPreference("auto_practice_quick") as SwitchPreference
+        val autoPracticeCyclic: SwitchPreference =
+            manager.findPreference("auto_practice_cyclic") as SwitchPreference
+        val autoPracticeLoopInterval: EditTextPreference =
+            manager.findPreference("auto_practice_cyclic_interval") as EditTextPreference
         val autoAnswerConfig: ListPreference =
             manager.findPreference("auto_answer_config") as ListPreference
         val customAnswerConfig: EditTextPreference =
@@ -59,12 +65,23 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
                 true
             }
         }
+        holder.autoPracticeLoopInterval.let {
+            var interval = kotlin.runCatching { Integer.parseInt(it.text) }.getOrElse { 1500 }
+            it.summary = "当前间隔: $interval 毫秒"
+            it.setOnPreferenceChangeListener { _, newValue ->
+                interval =
+                    kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 1500 }
+                it.summary = "当前间隔: $interval 毫秒"
+                true
+            }
+        }
         holder.quickModeInterval.let {
             var interval = kotlin.runCatching { Integer.parseInt(it.text) }.getOrElse { 200 }
             it.summary = "当前间隔: $interval 毫秒"
             it.setOnPreferenceChangeListener { _, newValue ->
-                interval = kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 200 }
-                holder.quickModeInterval.summary = "当前间隔: $interval 毫秒"
+                interval =
+                    kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 200 }
+                it.summary = "当前间隔: $interval 毫秒"
                 true
             }
         }
