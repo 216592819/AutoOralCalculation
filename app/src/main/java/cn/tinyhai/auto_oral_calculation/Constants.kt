@@ -21,6 +21,8 @@ object Classname {
 
     const val BASE_WEB_APP = "com.yuanfudao.android.vgo.webapp.ui.view.BaseWebApp"
 
+    const val COMMON_WEB_VIEW_INTERFACE = "com.yuanfudao.android.common.webview.CommonWebViewInterface"
+
     const val SIMPLE_WEB_APP_FIREWORK_ACTIVITY =
         "com.yuanfudao.android.leo.webview.ui.activity.SimpleWebAppFireworkActivity"
 
