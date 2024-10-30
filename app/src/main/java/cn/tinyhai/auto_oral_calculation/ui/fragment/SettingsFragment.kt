@@ -31,8 +31,12 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
             manager.findPreference("auto_answer_config") as ListPreference
         val customAnswerConfig: EditTextPreference =
             manager.findPreference("custom_answer_config") as EditTextPreference
+        val quickModeMustWin: SwitchPreference = manager.findPreference("quick_mode_must_win") as SwitchPreference
         val quickModeInterval: EditTextPreference =
             manager.findPreference("quick_mode_interval") as EditTextPreference
+        val pkCyclic: SwitchPreference = manager.findPreference("pk_cyclic") as SwitchPreference
+        val pkCyclicInterval: EditTextPreference =
+            manager.findPreference("pk_cyclic_interval") as EditTextPreference
         val github: Preference = manager.findPreference("github")!!
         val version: Preference = manager.findPreference("version")!!
     }
@@ -54,14 +58,20 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
             it.summary = "当前选择: ${AutoAnswerMode.entries[index].value}"
             var mode = AutoAnswerMode.entries[index]
             holder.customAnswerConfig.isEnabled = mode == AutoAnswerMode.CUSTOM
+            holder.quickModeMustWin.isEnabled = mode == AutoAnswerMode.QUICK
             holder.quickModeInterval.isEnabled = mode == AutoAnswerMode.QUICK
+            holder.pkCyclic.isEnabled =
+                mode == AutoAnswerMode.QUICK || mode == AutoAnswerMode.STANDARD
 
             it.setOnPreferenceChangeListener { _, newValue ->
                 index = kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 0 }
                 mode = AutoAnswerMode.entries[index]
                 holder.customAnswerConfig.isEnabled = mode == AutoAnswerMode.CUSTOM
+                holder.quickModeMustWin.isEnabled = mode == AutoAnswerMode.QUICK
                 holder.quickModeInterval.isEnabled = mode == AutoAnswerMode.QUICK
                 holder.autoAnswerConfig.summary = "当前选择: ${mode.value}"
+                holder.pkCyclic.isEnabled =
+                    mode == AutoAnswerMode.QUICK || mode == AutoAnswerMode.STANDARD
                 true
             }
         }
@@ -85,6 +95,17 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
                 true
             }
         }
+        holder.pkCyclicInterval.let {
+            var interval = kotlin.runCatching { Integer.parseInt(it.text) }.getOrElse { 1500 }
+            it.summary = "当前间隔: $interval 毫秒"
+            it.setOnPreferenceChangeListener { _, newValue ->
+                interval =
+                    kotlin.runCatching { Integer.parseInt(newValue.toString()) }.getOrElse { 1500 }
+                it.summary = "当前间隔: $interval 毫秒"
+                true
+            }
+        }
+
         holder.github.onPreferenceClickListener = this
     }
 

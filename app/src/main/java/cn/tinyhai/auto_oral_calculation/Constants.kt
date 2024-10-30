@@ -23,6 +23,8 @@ object Classname {
 
     const val COMMON_WEB_VIEW_INTERFACE = "com.yuanfudao.android.common.webview.CommonWebViewInterface"
 
+    const val OPEN_SCHEMA_BEAN = "com.yuanfudao.android.common.webview.bean.OpenSchemaBean"
+
     const val SIMPLE_WEB_APP_FIREWORK_ACTIVITY =
         "com.yuanfudao.android.leo.webview.ui.activity.SimpleWebAppFireworkActivity"
 

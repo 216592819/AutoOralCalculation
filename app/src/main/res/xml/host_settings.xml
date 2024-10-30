@@ -21,7 +21,7 @@
             android:defaultValue="false"
             android:dependency="auto_practice"
             android:key="auto_practice_cyclic"
-            android:title="循环答题" />
+            android:title="循环练习" />
         <EditTextPreference
             android:defaultValue="1500"
             android:dependency="auto_practice_cyclic"
@@ -44,6 +44,10 @@
             android:key="custom_answer_config"
             android:summary="请确保代码能正确运行"
             android:title="自定义答题" />
+        <SwitchPreference
+            android:title="极速模式稳赢"
+            android:key="quick_mode_must_win"
+            android:defaultValue="false" />
         <EditTextPreference
             android:defaultValue="200"
             android:enabled="false"
@@ -51,6 +55,17 @@
             android:inputType="number"
             android:key="quick_mode_interval"
             android:title="极速模式模拟答题间隔" />
+        <SwitchPreference
+            android:key="pk_cyclic"
+            android:title="循环PK"
+            android:defaultValue="false"/>
+        <EditTextPreference
+            android:key="pk_cyclic_interval"
+            android:defaultValue="1500"
+            android:dependency="pk_cyclic"
+            android:title="循环时间间隔"
+            android:inputType="number"
+            android:hint="单位毫秒，默认值1500" />
     </PreferenceCategory>
     <PreferenceCategory android:title="关于">
         <Preference
