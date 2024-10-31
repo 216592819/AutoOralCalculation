@@ -2,6 +2,7 @@ package cn.tinyhai.auto_oral_calculation.hook
 
 import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.view.View
 import android.webkit.JavascriptInterface
 import cn.tinyhai.auto_oral_calculation.Classname
@@ -12,9 +13,13 @@ import cn.tinyhai.auto_oral_calculation.util.logI
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.roundToLong
+import kotlin.random.Random
 
 class WebViewHook : BaseHook() {
 
@@ -33,9 +38,11 @@ class WebViewHook : BaseHook() {
             .bufferedReader().use { it.readText() }
     }
 
-    private val exercisePageLoaded = AtomicBoolean(false)
+    private val pkPageLoaded = AtomicBoolean(false)
 
     private val resultPageLoaded = AtomicBoolean(false)
+
+    private val appropriateCostTime = AtomicLong(0L)
 
     private var webViewRef: WeakReference<View>? = null
 
@@ -48,6 +55,11 @@ class WebViewHook : BaseHook() {
         logI("console.log >>>>>>>")
         logI(str)
         logI("console.log <<<<<<<")
+    }
+
+    @JavascriptInterface
+    fun targetCostTime(costTime: Long) {
+        appropriateCostTime.set(costTime - 100)
     }
 
     private fun hookConsoleLog() {
@@ -91,11 +103,18 @@ class WebViewHook : BaseHook() {
             val str = param.args[0].toString()
             when {
                 str.startsWith("javascript:") -> return@after
-                str.contains("/leo-web-oral-pk/exercise.html") -> {
+                str.contains("/bh5/leo-web-oral-pk/exercise.html") -> {
                     logI("exercise.html loaded")
                     hookConsoleLog()
-                    exercisePageLoaded.set(true)
+                    pkPageLoaded.set(true)
                 }
+
+                str.contains("/bh5/leo-web-oral-pk/english-words.html") -> {
+                    logI("english-words.html loaded")
+                    hookConsoleLog()
+                    pkPageLoaded.set(true)
+                }
+
                 str.contains("/bh5/leo-web-oral-pk/result.html") -> {
                     logI("result.html loaded")
                     hookConsoleLog()
@@ -112,8 +131,8 @@ class WebViewHook : BaseHook() {
         commonWebViewInterfaceClass.findMethod("jsLoadComplete", String::class.java)
             .after {
                 when {
-                    exercisePageLoaded.compareAndSet(true, false) -> {
-                        injectJs2ExercisePage()
+                    pkPageLoaded.compareAndSet(true, false) -> {
+                        injectJs2PkPage()
                     }
 
                     resultPageLoaded.compareAndSet(true, false) -> {
@@ -153,17 +172,10 @@ class WebViewHook : BaseHook() {
         logI("js injected")
     }
 
-    private fun injectJs2ExercisePage() {
+    private fun injectJs2PkPage() {
         val loadUrl = loadUrl ?: return
         val webView = webView ?: return
         webView.post {
-            injectConfig(loadUrl, webView, "quick_mode_interval") {
-                runCatching { Integer.parseInt(hostPrefs.getString(it, "")!!) }.getOrElse { 200 }
-            }
-            injectConfig(loadUrl, webView, "quick_mode_must_win") {
-                hostPrefs.getBoolean(it, false)
-            }
-
             val mode = getAutoAnswerMode()
             val jsCode = when (mode) {
                 AutoAnswerMode.QUICK -> quickJs
@@ -200,6 +212,7 @@ class WebViewHook : BaseHook() {
                         injectJsCode(cyclicJs, loadUrl, webView)
                     }
                 }
+
                 else -> {}
             }
         }
@@ -207,7 +220,9 @@ class WebViewHook : BaseHook() {
 
     private fun hookAddJavascriptInterface(addJavascriptInterface: Method) {
         val openSchemaBeanClass = findClass(Classname.OPEN_SCHEMA_BEAN)
+        val dataEncryptBeanClass = findClass(Classname.DATA_ENCRYPT_BEAN)
         val unhooks = arrayOf<Unhook?>(null)
+        var count = 0
         addJavascriptInterface.before { param ->
             val obj = param.args[0]
             val name = param.args[1]
@@ -216,9 +231,23 @@ class WebViewHook : BaseHook() {
                 "CommonWebView" -> {
                     val caller = XposedHelpers.callMethod(obj, "get", openSchemaBeanClass)
                     hookOpenSchema(caller::class.java)
-                    unhooks.forEach { it?.unhook() }
+                    count++
                 }
+
+                "LeoSecureWebView" -> {
+                    obj::class.java.declaredFields.firstOrNull {
+                        Map::class.java.isAssignableFrom(it.type)
+                    }?.let {
+                        val caller = (it.get(obj) as Map<*, *>)[dataEncryptBeanClass]!!
+                        hookDataEncrypt(caller::class.java)
+                    }
+                    count++
+                }
+
                 else -> {}
+            }
+            if (count >= 2) {
+                unhooks.forEach { it?.unhook() }
             }
         }.also {
             unhooks[0] = it
@@ -226,7 +255,7 @@ class WebViewHook : BaseHook() {
     }
 
     private fun hookOpenSchema(caller: Class<*>) {
-        var exerciseSchemas: Any? = null
+        var lastSchemas: Any? = null
         caller.allMethod("call").before {
             if (getAutoAnswerMode() !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
                 return@before
@@ -238,21 +267,87 @@ class WebViewHook : BaseHook() {
             val url = Uri.parse(schemas[0].toString()).getQueryParameter("url")!!
             val targetUri = Uri.parse(url)
             when (targetUri.path) {
-                "/bh5/leo-web-oral-pk/exercise.html" -> {
-                    exerciseSchemas = schemas.copyOf(schemas.size)
-                }
                 "/bh5/leo-web-study-group/motivation-honor-roll.html" -> {
                     when (targetUri.getQueryParameter("fromType")) {
                         "oralPkResult" -> {
-                            XposedHelpers.callMethod(it.args[0], "trigger", webView, null, emptyArray<Any>())
+                            XposedHelpers.callMethod(
+                                it.args[0],
+                                "trigger",
+                                webView,
+                                null,
+                                emptyArray<Any>()
+                            )
                             it.result = null
                         }
+
                         "resultPageJs" -> {
-                            XposedHelpers.setObjectField(it.args[0], "schemas", exerciseSchemas)
+                            XposedHelpers.setObjectField(it.args[0], "schemas", lastSchemas)
                             XposedHelpers.setBooleanField(it.args[0], "close", true)
                         }
                     }
                 }
+
+                "/bh5/leo-web-oral-pk/result.html" -> {}
+                else -> {
+                    lastSchemas = schemas.copyOf(schemas.size)
+                }
+            }
+        }
+    }
+
+    private fun getSimulateCostTime(questionCnt: Int): Long {
+        val interval = kotlin.runCatching {
+            Integer.parseInt(
+                hostPrefs.getString(
+                    "quick_mode_interval",
+                    ""
+                )!!
+            )
+        }.getOrElse { 200 }
+        var costTime = 0L
+        repeat(questionCnt) {
+            costTime += (interval * (1 + Random.nextFloat() * 0.25)).roundToLong()
+        }
+        return costTime
+    }
+
+    private fun hookDataEncrypt(caller: Class<*>) {
+        caller.allMethod("call").before { param ->
+            if (getAutoAnswerMode() != AutoAnswerMode.QUICK) {
+                return@before
+            }
+            val bean = param.args[0]
+            val base64 = XposedHelpers.getObjectField(bean, "base64").toString()
+            if (base64.isBlank()) {
+                return@before
+            }
+            val json =
+                kotlin.runCatching { JSONObject(Base64.decode(base64, 0).decodeToString()) }.getOrNull()
+                    ?: return@before
+            if (!json.has("pkIdStr")) {
+                return@before
+            }
+            runCatching {
+                val questionCnt = json.getInt("questionCnt")
+                val mustWin = hostPrefs.getBoolean("quick_mode_must_win", false)
+                val appropriateCostTime = appropriateCostTime.get()
+                val costTime = if (mustWin && appropriateCostTime > 0) {
+                    appropriateCostTime
+                } else {
+                    getSimulateCostTime(questionCnt).let {
+                        if (it > 0) {
+                            it
+                        } else {
+                            questionCnt * 200L
+                        }
+                    }
+                }
+                logI("originCostTime: ${json.get("costTime")}, costTime: $costTime")
+                json.put("costTime", costTime)
+                val newBase64 = Base64.encode(json.toString().toByteArray(), 0).decodeToString()
+                XposedHelpers.setObjectField(bean, "base64", newBase64)
+            }.onFailure {
+                logI(it)
             }
         }
     }

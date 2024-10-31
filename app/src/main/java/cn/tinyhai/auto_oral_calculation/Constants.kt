@@ -25,6 +25,8 @@ object Classname {
 
     const val OPEN_SCHEMA_BEAN = "com.yuanfudao.android.common.webview.bean.OpenSchemaBean"
 
+    const val DATA_ENCRYPT_BEAN = "com.fenbi.android.leo.webapp.secure.commands.DataEncryptBean"
+
     const val SIMPLE_WEB_APP_FIREWORK_ACTIVITY =
         "com.yuanfudao.android.leo.webview.ui.activity.SimpleWebAppFireworkActivity"
 
