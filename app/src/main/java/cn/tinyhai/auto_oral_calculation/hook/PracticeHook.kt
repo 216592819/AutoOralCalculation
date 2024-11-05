@@ -7,14 +7,27 @@ import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import cn.tinyhai.auto_oral_calculation.Classname
-import cn.tinyhai.auto_oral_calculation.util.hostPrefs
+import cn.tinyhai.auto_oral_calculation.api.OralApiService
+import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
+import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
+import org.json.JSONArray
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 class PracticeHook : BaseHook() {
@@ -51,6 +64,10 @@ class PracticeHook : BaseHook() {
         }
     }
 
+    private val executor: ExecutorService by lazy {
+        ThreadPoolExecutor(0, 5, 30, TimeUnit.SECONDS, LinkedBlockingQueue(30), DiscardPolicy())
+    }
+
     private lateinit var presenterRef: WeakReference<Any>
 
     private val presenter get() = presenterRef.get()
@@ -76,6 +93,21 @@ class PracticeHook : BaseHook() {
         list
     }
 
+    private val strokesJson by lazy {
+        val jsonArray = JSONArray()
+        strokes.forEach {
+            val arr = JSONArray()
+            it.forEach { point ->
+                val p = JSONObject()
+                p.put("x", point.x)
+                p.put("y", point.y)
+                arr.put(p)
+            }
+            jsonArray.put(arr)
+        }
+        jsonArray.toString()
+    }
+
     override fun startHook() {
         val quickExercisePresenterClass = findClass(Classname.PRESENTER)
         val startExercise = quickExercisePresenterClass.findMethod("c")
@@ -89,7 +121,7 @@ class PracticeHook : BaseHook() {
             List::class.java
         )
         val performNext = Runnable {
-            if (hostPrefs.getBoolean("auto_practice", true)) {
+            if (Practice.autoPractice) {
                 presenter?.let {
                     startExercise.invoke(it)
                     val answer = (getAnswers(it) as? List<*>)?.get(0).toString()
@@ -101,12 +133,14 @@ class PracticeHook : BaseHook() {
         }
         // afterAnimation
         quickExercisePresenterClass.findMethod("N").after {
-            if (hostPrefs.getBoolean("auto_practice", true)) {
+            if (Practice.autoPractice) {
                 mainHandler.post(performNext)
             }
         }
 
         val quickExerciseActivityClass = findClass(Classname.QUICK_EXERCISE_ACTIVITY)
+        hookQuickExerciseActivity(quickExerciseActivityClass)
+
         val modelClass =
             (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments.getOrNull(
                 1
@@ -118,10 +152,10 @@ class PracticeHook : BaseHook() {
         // afterLoadFinish
         quickExercisePresenterClass.findMethod("P", List::class.java).after { param ->
             presenterRef = WeakReference(param.thisObject)
-            if (!hostPrefs.getBoolean("auto_practice", true)) {
+            if (!Practice.autoPractice) {
                 return@after
             }
-            if (hostPrefs.getBoolean("auto_practice_quick", false)) {
+            if (Practice.autoPracticeQuick) {
                 kotlin.runCatching {
                     val v = XposedHelpers.getObjectField(param.thisObject, "a")
                     val activity = XposedHelpers.callMethod(v, "getContext") as Activity
@@ -160,50 +194,67 @@ class PracticeHook : BaseHook() {
             }
         }
 
-        val exerciseResultActivityClass =
-            findClass(Classname.EXERCISE_RESULT_ACTIVITY)
-        val exerciseResultActivityCompanionClass =
-            findClass("${Classname.EXERCISE_RESULT_ACTIVITY}\$a")
+        hookApiServiceCompanion()
 
-        exerciseResultActivityClass.findMethod("onCreate", Bundle::class.java).after { param ->
-            kotlin.runCatching {
-                val activity = param.thisObject
-                val companion = XposedHelpers.findFirstFieldByExactType(
-                    exerciseResultActivityClass,
-                    exerciseResultActivityCompanionClass
-                ).get(activity)
-                val model = XposedHelpers.callMethod(companion, "a")
-                val examIdString = XposedHelpers.getObjectField(model, "a")
-                val requestData = XposedHelpers.getObjectField(model, "b")
-                val requestDataString = XposedHelpers.callMethod(requestData, "writeJson")
-                logI("examId: $examIdString")
-                logI("requestData: $requestDataString")
-            }.onFailure {
-                logI(it)
+        hookSimpleWebActivityCompanion()
+    }
+
+    private fun hookApiServiceCompanion() {
+        val oralApiServiceCompanionClass = findClass("${Classname.ORAL_API_SERVICE}\$a")
+        val unhooks = arrayOf<Unhook?>(null)
+        oralApiServiceCompanionClass.findMethod("a").after { param ->
+            OralApiService.init(param.result)
+            unhooks.forEach { it?.unhook() }
+        }.also { unhooks[0] = it }
+    }
+
+    private fun hookQuickExerciseActivity(quickExerciseActivityClass: Class<*>) {
+        val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
+        val modelClass =
+            (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments.getOrNull(
+                1
+            )
+        val getGeneralModel =
+            quickExerciseActivityClass.declaredMethods.firstOrNull { it.returnType == modelClass && it.parameterCount == 0 }
+                ?.also { it.isAccessible = true }
+
+        var helper: HonorHelper? = null
+        quickExerciseActivityClass.findMethod("onCreate", Bundle::class.java).after { param ->
+            val activity = param.thisObject
+            val scope =
+                XposedHelpers.callStaticMethod(lifecycleOwnerKtClass, "getLifecycleScope", activity)
+            val coroutineContext = XposedHelpers.callMethod(scope, "getCoroutineContext")
+            val model = getGeneralModel?.invoke(activity) ?: return@after
+            val keyPointId = XposedHelpers.getIntField(model, "a").toString()
+            val limit = XposedHelpers.getIntField(model, "c").toString()
+
+            OralApiService.setup(coroutineContext, keyPointId, limit)
+
+            if (Practice.autoHonor) {
+                helper = HonorHelper(WeakReference(activity as Context)).also {
+                    it.startHonor()
+                }
             }
         }
 
+        quickExerciseActivityClass.findMethod("onDestroy").before {
+            helper?.stopHonor()
+        }
+    }
+
+    private fun hookSimpleWebActivityCompanion() {
+        val exerciseResultActivityClass =
+            findClass(Classname.EXERCISE_RESULT_ACTIVITY)
         val simpleWebActivityCompanionClass =
             findClass("${Classname.SIMPLE_WEB_APP_FIREWORK_ACTIVITY}\$a")
 
         simpleWebActivityCompanionClass.allMethod("a").before { param ->
-            if (!hostPrefs.getBoolean(
-                    "auto_practice",
-                    true
-                ) || !hostPrefs.getBoolean("auto_practice_cyclic", false)
-            ) {
+            if (!Practice.autoPracticeCyclic) {
                 return@before
             }
             val activity = param.args[0] as? Activity ?: return@before
             if (exerciseResultActivityClass.isInstance(activity)) {
-                val interval = runCatching {
-                    Integer.parseInt(
-                        hostPrefs.getString(
-                            "auto_practice_cyclic_interval",
-                            "1500"
-                        )!!
-                    )
-                }.getOrElse { 1500 }
+                val interval = Practice.autoPracticeCyclicInterval
                 mainHandler.postDelayed({
                     if (!activity.isDestroyed && !activity.isFinishing) {
                         kotlin.runCatching {
@@ -220,6 +271,108 @@ class PracticeHook : BaseHook() {
                     }
                 }, interval.toLong())
                 param.result = null
+            }
+        }
+    }
+
+    private inner class HonorHelper(
+        private val contextRef: WeakReference<Context>
+    ) {
+        private val count: AtomicLong = AtomicLong(0)
+
+        private val semaphore: Semaphore = Semaphore(5)
+
+        private var lastTimeMillis: Long = 0
+
+        @Volatile
+        private var active: Boolean = true
+
+        private var thread: Thread? = null
+
+        private fun toastIfNeeded() {
+            when {
+                lastTimeMillis == 0L -> {
+                    lastTimeMillis = System.currentTimeMillis()
+                    mainHandler.post {
+                        contextRef.get()?.let {
+                            Toast.makeText(it, "自动上分已启动", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                System.currentTimeMillis() - lastTimeMillis > 5000 -> {
+                    lastTimeMillis = System.currentTimeMillis()
+                    mainHandler.post {
+                        contextRef.get()?.let {
+                            Toast.makeText(it, "已练习${count}次", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
+
+        fun stopHonor() {
+            active = false
+            thread?.interrupt()
+        }
+
+        fun startHonor() {
+            thread = thread {
+                while (active && !Thread.interrupted()) {
+                    toastIfNeeded()
+                    try {
+                        semaphore.acquire()
+                        OralApiService.getExamInfo { result ->
+                            semaphore.release()
+                            result.onSuccess {
+                                handleExamVO(it)
+                            }.onFailure {
+                                logI(it)
+                            }
+                        }
+                    } catch (_: InterruptedException) {}
+                }
+            }
+        }
+
+        private fun handleExamVO(examVO: Any) {
+            if (!active) {
+                return
+            }
+            executor.execute {
+                kotlin.runCatching {
+                    buildAndUploadExamResult(examVO)
+                }.onFailure {
+                    logI(it)
+                }
+            }
+        }
+
+        private fun buildAndUploadExamResult(examVO: Any) {
+            val examId = XposedHelpers.getObjectField(examVO, "idString").toString()
+            val questions = XposedHelpers.getObjectField(examVO, "questions") as List<*>
+            var totalTime = 0L
+            questions.forEach {
+                val answers =
+                    XposedHelpers.getObjectField(it, "answers") as? List<*>
+                if (!answers.isNullOrEmpty()) {
+                    XposedHelpers.callMethod(it, "setUserAnswer", answers[0])
+                }
+                val costTime = Random.nextInt(233, 2333)
+                XposedHelpers.callMethod(it, "setCostTime", costTime)
+                XposedHelpers.callMethod(it, "setScript", strokesJson)
+                XposedHelpers.callMethod(it, "setStatus", 1)
+                totalTime += costTime
+            }
+            val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
+            XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
+            XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
+            OralApiService.uploadExamResult(examId, examVO) {
+                it.onFailure {
+                    logI(it)
+                }.onSuccess {
+                    count.incrementAndGet()
+                }
             }
         }
     }

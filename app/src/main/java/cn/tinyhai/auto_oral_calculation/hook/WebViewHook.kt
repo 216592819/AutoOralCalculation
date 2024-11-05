@@ -8,7 +8,7 @@ import android.webkit.JavascriptInterface
 import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.XposedInit.Companion.moduleRes
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
-import cn.tinyhai.auto_oral_calculation.util.hostPrefs
+import cn.tinyhai.auto_oral_calculation.util.PK
 import cn.tinyhai.auto_oral_calculation.util.logI
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
@@ -142,24 +142,11 @@ class WebViewHook : BaseHook() {
             }
     }
 
-    private fun getAutoAnswerMode(): AutoAnswerMode {
-        val index = runCatching {
-            Integer.parseInt(
-                hostPrefs.getString(
-                    "auto_answer_config",
-                    "0"
-                )!!
-            )
-        }.getOrElse { 0 }
-        return AutoAnswerMode.entries[index]
-    }
-
-    private fun injectConfig(loadUrl: Method, webView: View, key: String, value: (String) -> Any) {
-        val v = value(key)
+    private fun injectConfig(loadUrl: Method, webView: View, key: String, value: Any) {
         XposedBridge.invokeOriginalMethod(
             loadUrl,
             webView,
-            arrayOf("javascript: (function(){window._$key=$v;})();")
+            arrayOf("javascript: (function(){window._$key=$value;})();")
         )
     }
 
@@ -176,14 +163,11 @@ class WebViewHook : BaseHook() {
         val loadUrl = loadUrl ?: return
         val webView = webView ?: return
         webView.post {
-            val mode = getAutoAnswerMode()
+            val mode = PK.mode
             val jsCode = when (mode) {
                 AutoAnswerMode.QUICK -> quickJs
 
-                AutoAnswerMode.CUSTOM -> hostPrefs.getString(
-                    "custom_answer_config",
-                    ""
-                )!!
+                AutoAnswerMode.CUSTOM -> PK.customJs
 
                 AutoAnswerMode.STANDARD -> standardJs
 
@@ -201,19 +185,10 @@ class WebViewHook : BaseHook() {
         val loadUrl = loadUrl ?: return
         val webView = webView ?: return
         webView.post {
-            injectConfig(loadUrl, webView, "pk_cyclic_interval") {
-                runCatching { Integer.parseInt(hostPrefs.getString(it, "")!!) }.getOrElse { 1500 }
-            }
+            injectConfig(loadUrl, webView, "pk_cyclic_interval", PK.pkCyclicInterval)
 
-            val mode = getAutoAnswerMode()
-            when (mode) {
-                AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD -> {
-                    if (hostPrefs.getBoolean("pk_cyclic", false)) {
-                        injectJsCode(cyclicJs, loadUrl, webView)
-                    }
-                }
-
-                else -> {}
+            if (PK.pkCyclic) {
+                injectJsCode(cyclicJs, loadUrl, webView)
             }
         }
     }
@@ -257,10 +232,7 @@ class WebViewHook : BaseHook() {
     private fun hookOpenSchema(caller: Class<*>) {
         var lastSchemas: Any? = null
         caller.allMethod("call").before {
-            if (getAutoAnswerMode() !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
-                return@before
-            }
-            if (!hostPrefs.getBoolean("pk_cyclic", false)) {
+            if (!PK.pkCyclic) {
                 return@before
             }
             val schemas = XposedHelpers.getObjectField(it.args[0], "schemas") as Array<*>
@@ -296,14 +268,7 @@ class WebViewHook : BaseHook() {
     }
 
     private fun getSimulateCostTime(questionCnt: Int): Long {
-        val interval = kotlin.runCatching {
-            Integer.parseInt(
-                hostPrefs.getString(
-                    "quick_mode_interval",
-                    ""
-                )!!
-            )
-        }.getOrElse { 200 }
+        val interval = PK.quickModeInterval
         var costTime = 0L
         repeat(questionCnt) {
             costTime += (interval * (1 + Random.nextFloat() * 0.25)).roundToLong()
@@ -313,7 +278,7 @@ class WebViewHook : BaseHook() {
 
     private fun hookDataEncrypt(caller: Class<*>) {
         caller.allMethod("call").before { param ->
-            if (getAutoAnswerMode() != AutoAnswerMode.QUICK) {
+            if (PK.mode != AutoAnswerMode.QUICK) {
                 return@before
             }
             val bean = param.args[0]
@@ -329,9 +294,8 @@ class WebViewHook : BaseHook() {
             }
             runCatching {
                 val questionCnt = json.getInt("questionCnt")
-                val mustWin = hostPrefs.getBoolean("quick_mode_must_win", false)
                 val appropriateCostTime = appropriateCostTime.get()
-                val costTime = if (mustWin && appropriateCostTime > 0) {
+                val costTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
                     appropriateCostTime
                 } else {
                     getSimulateCostTime(questionCnt).let {

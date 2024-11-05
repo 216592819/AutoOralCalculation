@@ -3,9 +3,9 @@
     <Preference
         android:title="跳转到设置界面"
         android:summary="小猿口算->设置->口算糕手设置"
-        android:key="goto_settings"/>
+        android:key="@string/key_goto_settings"/>
     <PreferenceCategory android:title="关于">
-        <Preference android:title="Github" android:key="github"/>
-        <Preference android:title="版本" android:key="version"/>
+        <Preference android:title="Github" android:key="@string/key_github"/>
+        <Preference android:title="版本" android:key="@string/key_version"/>
     </PreferenceCategory>
 </PreferenceScreen>

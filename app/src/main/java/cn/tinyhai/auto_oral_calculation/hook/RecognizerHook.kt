@@ -1,7 +1,7 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
 import cn.tinyhai.auto_oral_calculation.Classname
-import cn.tinyhai.auto_oral_calculation.util.hostPrefs
+import cn.tinyhai.auto_oral_calculation.util.Common
 
 class RecognizerHook : BaseHook() {
     override fun startHook() {
@@ -12,7 +12,7 @@ class RecognizerHook : BaseHook() {
             List::class.java,
             List::class.java
         ).before { param ->
-            if (!hostPrefs.getBoolean("always_true_answer", true)) {
+            if (!Common.alwaysTrue) {
                 return@before
             }
             val answers = param.args[2] as List<*>

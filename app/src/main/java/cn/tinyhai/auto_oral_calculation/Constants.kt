@@ -31,6 +31,14 @@ object Classname {
         "com.yuanfudao.android.leo.webview.ui.activity.SimpleWebAppFireworkActivity"
 
     const val EXERCISE_RESULT_ACTIVITY = "com.yuanfudao.android.leo.exercise.oral.result.activity.OralExerciseResultActivity"
+
+    const val ORAL_API_SERVICE = "com.yuanfudao.android.leo.exercise.oral.ApiService"
+
+    const val LIFECYCLE_OWNER_KT = "androidx.lifecycle.LifecycleOwnerKt"
+
+    const val MMKV = "com.tencent.mmkv.MMKV"
+
+    const val RETROFIT = "retrofit2.Retrofit"
 }
 
 const val PREFS_NAME = "auto_oral_calculation"

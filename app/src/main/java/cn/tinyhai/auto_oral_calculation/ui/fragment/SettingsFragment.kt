@@ -12,33 +12,36 @@ import cn.tinyhai.auto_oral_calculation.BuildConfig
 import cn.tinyhai.auto_oral_calculation.PREFS_NAME
 import cn.tinyhai.auto_oral_calculation.R
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
+import cn.tinyhai.auto_oral_calculation.util.StringRes
 import cn.tinyhai.auto_oral_calculation.util.openGithub
 
 class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
 
-    private class Holder(manager: PreferenceManager) {
+    private class Holder(manager: PreferenceManager, stringRes: StringRes) {
         val alwaysTrue: SwitchPreference =
-            manager.findPreference("always_true_answer") as SwitchPreference
+            manager.findPreference(stringRes.KEY_ALWAYS_TRUE_ANSWER) as SwitchPreference
+        val autoHonor: SwitchPreference = manager.findPreference(stringRes.KEY_AUTO_HONOR) as SwitchPreference
         val autoPractice: SwitchPreference =
-            manager.findPreference("auto_practice") as SwitchPreference
+            manager.findPreference(stringRes.KEY_AUTO_PRACTICE) as SwitchPreference
         val autoPracticeQuick: SwitchPreference =
-            manager.findPreference("auto_practice_quick") as SwitchPreference
+            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_QUICK) as SwitchPreference
         val autoPracticeCyclic: SwitchPreference =
-            manager.findPreference("auto_practice_cyclic") as SwitchPreference
-        val autoPracticeLoopInterval: EditTextPreference =
-            manager.findPreference("auto_practice_cyclic_interval") as EditTextPreference
+            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_CYCLIC) as SwitchPreference
+        val autoPracticeCyclicInterval: EditTextPreference =
+            manager.findPreference(stringRes.KEY_AUTO_PRACTICE_CYCLIC_INTERVAL) as EditTextPreference
         val autoAnswerConfig: ListPreference =
-            manager.findPreference("auto_answer_config") as ListPreference
+            manager.findPreference(stringRes.KEY_AUTO_ANSWER_CONFIG) as ListPreference
         val customAnswerConfig: EditTextPreference =
-            manager.findPreference("custom_answer_config") as EditTextPreference
-        val quickModeMustWin: SwitchPreference = manager.findPreference("quick_mode_must_win") as SwitchPreference
+            manager.findPreference(stringRes.KEY_CUSTOM_ANSWER_CONFIG) as EditTextPreference
+        val quickModeMustWin: SwitchPreference =
+            manager.findPreference(stringRes.KEY_QUICK_MODE_MUST_WIN) as SwitchPreference
         val quickModeInterval: EditTextPreference =
-            manager.findPreference("quick_mode_interval") as EditTextPreference
-        val pkCyclic: SwitchPreference = manager.findPreference("pk_cyclic") as SwitchPreference
+            manager.findPreference(stringRes.KEY_QUICK_MODE_INTERVAL) as EditTextPreference
+        val pkCyclic: SwitchPreference = manager.findPreference(stringRes.KEY_PK_CYCLIC) as SwitchPreference
         val pkCyclicInterval: EditTextPreference =
-            manager.findPreference("pk_cyclic_interval") as EditTextPreference
-        val github: Preference = manager.findPreference("github")!!
-        val version: Preference = manager.findPreference("version")!!
+            manager.findPreference(stringRes.KEY_PK_CYCLIC_INTERVAL) as EditTextPreference
+        val github: Preference = manager.findPreference(stringRes.KEY_GITHUB)!!
+        val version: Preference = manager.findPreference(stringRes.KEY_VERSION)!!
     }
 
     private lateinit var holder: Holder
@@ -47,7 +50,7 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
         super.onCreate(savedInstanceState)
         preferenceManager.sharedPreferencesName = PREFS_NAME
         addPreferencesFromResource(R.xml.host_settings)
-        holder = Holder(preferenceManager)
+        holder = Holder(preferenceManager, StringRes(resources))
         initPreference()
     }
 
@@ -75,7 +78,7 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
                 true
             }
         }
-        holder.autoPracticeLoopInterval.let {
+        holder.autoPracticeCyclicInterval.let {
             var interval = kotlin.runCatching { Integer.parseInt(it.text) }.getOrElse { 1500 }
             it.summary = "当前间隔: $interval 毫秒"
             it.setOnPreferenceChangeListener { _, newValue ->
