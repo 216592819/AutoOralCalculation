@@ -9,6 +9,7 @@ import kotlin.coroutines.cancellation.CancellationException
 object OralApiService {
 
     private class UploadExamResultCoroutine(
+        private val coroutineContext: Any,
         private val onResult: (Result<Unit>) -> Unit
     ) : InvocationHandler {
         override fun invoke(proxy: Any?, method: Method, args: Array<out Any>?): Any? {
@@ -44,6 +45,7 @@ object OralApiService {
     }
 
     private class GetExamInfoCoroutine(
+        private val coroutineContext: Any,
         private val onResult: (Result<Any>) -> Unit
     ) : InvocationHandler {
         override fun invoke(proxy: Any?, method: Method, args: Array<out Any>?): Any? {
@@ -108,13 +110,15 @@ object OralApiService {
 
     fun getExamInfo(onResult: (Result<Any>) -> Unit) {
         val coroutineClass = getExamInfoMethod.parameterTypes[2]
-        val getExamInfoProxy = Proxy.newProxyInstance(coroutineClass.classLoader, arrayOf(coroutineClass), GetExamInfoCoroutine(onResult))
+        val getExamInfoProxy = Proxy.newProxyInstance(coroutineClass.classLoader, arrayOf(coroutineClass), GetExamInfoCoroutine(
+            coroutineContext, onResult))
         getExamInfoMethod.invoke(apiService, keyPointId, limit, getExamInfoProxy)
     }
 
     fun uploadExamResult(examId: String, requestData: Any, onResult: (Result<Unit>) -> Unit) {
         val coroutineClass = uploadExamResultMethod.parameterTypes[2]
-        val uploadExamResultProxy = Proxy.newProxyInstance(coroutineClass.classLoader, arrayOf(coroutineClass), UploadExamResultCoroutine(onResult))
+        val uploadExamResultProxy = Proxy.newProxyInstance(coroutineClass.classLoader, arrayOf(coroutineClass), UploadExamResultCoroutine(
+            coroutineContext, onResult))
         uploadExamResultMethod.invoke(apiService, examId, requestData, uploadExamResultProxy)
     }
 }

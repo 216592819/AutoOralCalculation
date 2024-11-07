@@ -1,13 +1,27 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputFilter
+import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
-import android.widget.Toast
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.LinearLayout.LayoutParams
+import android.widget.ProgressBar
+import android.widget.TextView
 import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.api.OralApiService
 import cn.tinyhai.auto_oral_calculation.util.Practice
@@ -26,8 +40,9 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
+import kotlin.concurrent.withLock
 import kotlin.random.Random
 
 class PracticeHook : BaseHook() {
@@ -150,7 +165,9 @@ class PracticeHook : BaseHook() {
                 ?.also { it.isAccessible = true }
         var modelWrapper: ExerciseGeneralModelWrapper? = null
         // afterLoadFinish
-        quickExercisePresenterClass.findMethod("P", List::class.java).after { param ->
+        quickExercisePresenterClass.declaredMethods.first {
+            it.parameterCount == 1 && List::class.java.isAssignableFrom(it.parameterTypes[0])
+        }.after { param ->
             presenterRef = WeakReference(param.thisObject)
             if (!Practice.autoPractice) {
                 return@after
@@ -208,6 +225,84 @@ class PracticeHook : BaseHook() {
         }.also { unhooks[0] = it }
     }
 
+    private fun showEditAlertDialog(context: Context, onConfirm: (Int) -> Unit) {
+        val editText = EditText(context)
+        editText.inputType = EditorInfo.TYPE_CLASS_NUMBER
+        editText.filters = arrayOf(InputFilter.LengthFilter(9))
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics).toInt()
+            setPaddingRelative(padding, padding, padding, 0)
+            addView(editText)
+        }
+
+        val dialog = AlertDialog.Builder(context)
+            .setPositiveButton(android.R.string.ok) { d, _ ->
+                val targetCount =
+                    kotlin.runCatching { editText.text.toString().toInt() }.getOrElse { 0 }
+                onConfirm(targetCount)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setTitle("请输入练习次数")
+            .setView(container)
+            .show()
+        val positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+        positiveButton.isEnabled = false
+        editText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+            override fun afterTextChanged(s: Editable) {
+                positiveButton.isEnabled = s.isNotEmpty()
+            }
+        })
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun showProgressDialog(context: Context, onDismiss: () -> Unit): (Int, Int) -> Unit {
+        val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal)
+        progressBar.layoutParams = LayoutParams(
+            LayoutParams.MATCH_PARENT,
+            LayoutParams.WRAP_CONTENT
+        )
+        val textView = TextView(context).apply {
+            text = "0/0"
+            textSize = 16f
+            setTextColor(Color.rgb(0x33, 0x33, 0x33))
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setHorizontalGravity(Gravity.END)
+            val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics).toInt()
+            setPaddingRelative(padding, padding, padding, 0)
+            addView(progressBar)
+            addView(textView)
+        }
+        val dialog = AlertDialog
+            .Builder(context)
+            .setTitle("练习进度")
+            .setView(container)
+            .setNegativeButton("停止", null)
+            .setCancelable(false)
+            .setOnDismissListener {
+                onDismiss()
+            }
+            .show()
+        return { current, target ->
+            mainHandler.post {
+                val progress = (100 * (current / target.toFloat())).toInt().coerceIn(0, 100)
+                progressBar.setProgress(progress, true)
+                textView.text = "$current/$target"
+                if (progress >= 100) {
+                    dialog.getButton(DialogInterface.BUTTON_NEGATIVE).text = "完成"
+                }
+            }
+        }
+    }
+
     private fun hookQuickExerciseActivity(quickExerciseActivityClass: Class<*>) {
         val lifecycleOwnerKtClass = findClass(Classname.LIFECYCLE_OWNER_KT)
         val modelClass =
@@ -229,10 +324,14 @@ class PracticeHook : BaseHook() {
             val limit = XposedHelpers.getIntField(model, "c").toString()
 
             OralApiService.setup(coroutineContext, keyPointId, limit)
-
             if (Practice.autoHonor) {
-                helper = HonorHelper(WeakReference(activity as Context)).also {
-                    it.startHonor()
+                showEditAlertDialog(activity as Context) { targetCount ->
+                    val onProgressChange = showProgressDialog(activity) {
+                        helper?.stopHonor()
+                    }
+                    helper = HonorHelper(targetCount, onProgressChange).also {
+                        it.startHonor()
+                    }
                 }
             }
         }
@@ -276,40 +375,23 @@ class PracticeHook : BaseHook() {
     }
 
     private inner class HonorHelper(
-        private val contextRef: WeakReference<Context>
+        private val targetCount: Int = Int.MAX_VALUE,
+        private val onProgress: (Int, Int) -> Unit
     ) {
-        private val count: AtomicLong = AtomicLong(0)
+        private val lock = ReentrantLock()
+
+        private val uploadResultCondition = lock.newCondition()
+
+        private var pendingCount: Int = 0
+
+        private var successCount: Int = 0
 
         private val semaphore: Semaphore = Semaphore(5)
-
-        private var lastTimeMillis: Long = 0
 
         @Volatile
         private var active: Boolean = true
 
         private var thread: Thread? = null
-
-        private fun toastIfNeeded() {
-            when {
-                lastTimeMillis == 0L -> {
-                    lastTimeMillis = System.currentTimeMillis()
-                    mainHandler.post {
-                        contextRef.get()?.let {
-                            Toast.makeText(it, "自动上分已启动", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-
-                System.currentTimeMillis() - lastTimeMillis > 5000 -> {
-                    lastTimeMillis = System.currentTimeMillis()
-                    mainHandler.post {
-                        contextRef.get()?.let {
-                            Toast.makeText(it, "已练习${count}次", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }
 
         fun stopHonor() {
             active = false
@@ -317,10 +399,22 @@ class PracticeHook : BaseHook() {
         }
 
         fun startHonor() {
+            if (targetCount <= 0) {
+                stopHonor()
+                return
+            }
             thread = thread {
                 while (active && !Thread.interrupted()) {
-                    toastIfNeeded()
                     try {
+                        lock.withLock {
+                            while (successCount < targetCount && successCount + pendingCount >= targetCount) {
+                                uploadResultCondition.await()
+                            }
+                            if (successCount >= targetCount) {
+                                stopHonor()
+                                return@thread
+                            }
+                        }
                         semaphore.acquire()
                         OralApiService.getExamInfo { result ->
                             semaphore.release()
@@ -330,7 +424,8 @@ class PracticeHook : BaseHook() {
                                 logI(it)
                             }
                         }
-                    } catch (_: InterruptedException) {}
+                    } catch (_: InterruptedException) {
+                    }
                 }
             }
         }
@@ -349,6 +444,11 @@ class PracticeHook : BaseHook() {
         }
 
         private fun buildAndUploadExamResult(examVO: Any) {
+            lock.withLock {
+                if (successCount + pendingCount >= targetCount) {
+                    return
+                }
+            }
             val examId = XposedHelpers.getObjectField(examVO, "idString").toString()
             val questions = XposedHelpers.getObjectField(examVO, "questions") as List<*>
             var totalTime = 0L
@@ -367,11 +467,21 @@ class PracticeHook : BaseHook() {
             val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
             XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
             XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
+            lock.withLock {
+                pendingCount += 1
+            }
             OralApiService.uploadExamResult(examId, examVO) {
+                lock.withLock {
+                    pendingCount -= 1
+                    if (it.isSuccess) {
+                        successCount += 1
+                    }
+                    uploadResultCondition.signalAll()
+                }
                 it.onFailure {
                     logI(it)
                 }.onSuccess {
-                    count.incrementAndGet()
+                    onProgress(successCount, targetCount)
                 }
             }
         }
