@@ -36,12 +36,10 @@ object Classname {
 
     const val LIFECYCLE_OWNER_KT = "androidx.lifecycle.LifecycleOwnerKt"
 
-    const val MMKV = "com.tencent.mmkv.MMKV"
-
     const val RETROFIT = "retrofit2.Retrofit"
 }
 
-const val PREFS_NAME = "auto_oral_calculation"
+const val MODULE_PREFS_NAME = "auto_oral_calculation"
 
 const val HOST_PACKAGE_NAME = "com.fenbi.android.leo"
 

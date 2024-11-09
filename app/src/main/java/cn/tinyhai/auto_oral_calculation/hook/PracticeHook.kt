@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
@@ -27,7 +28,6 @@ import cn.tinyhai.auto_oral_calculation.api.OralApiService
 import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
-import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
 import org.json.JSONArray
 import org.json.JSONObject
@@ -36,7 +36,6 @@ import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.Semaphore
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy
 import java.util.concurrent.TimeUnit
@@ -80,35 +79,35 @@ class PracticeHook : BaseHook() {
     }
 
     private val executor: ExecutorService by lazy {
-        ThreadPoolExecutor(0, 5, 30, TimeUnit.SECONDS, LinkedBlockingQueue(30), DiscardPolicy())
+        ThreadPoolExecutor(0, 5, 30L, TimeUnit.SECONDS, LinkedBlockingQueue(10), DiscardPolicy())
     }
 
     private lateinit var presenterRef: WeakReference<Any>
 
     private val presenter get() = presenterRef.get()
 
-    private val strokes by lazy {
-        var x = 233.33333f
-        var y = 233.33333f
+    private val strokes: List<Array<PointF>> get() {
+        var x = Random.nextInt(233, 666) + Random.nextFloat() * 100
+        var y = Random.nextInt(233, 666) + Random.nextFloat() * 100
         val deltaX = 22.222f
         val deltaY = 22.222f
         val list = ArrayList<Array<PointF>>()
         val points = arrayListOf(PointF(x, y))
-        repeat(9) {
+        repeat(4) {
             x += deltaX
             y += deltaY
             points.add(PointF(x, y))
         }
-        repeat(18) {
+        repeat(8) {
             x += deltaX
             y -= deltaY
             points.add(PointF(x, y))
         }
         list.add(points.toTypedArray())
-        list
+        return list
     }
 
-    private val strokesJson by lazy {
+    private val strokesJson: String get() {
         val jsonArray = JSONArray()
         strokes.forEach {
             val arr = JSONArray()
@@ -120,7 +119,7 @@ class PracticeHook : BaseHook() {
             }
             jsonArray.put(arr)
         }
-        jsonArray.toString()
+        return jsonArray.toString()
     }
 
     override fun startHook() {
@@ -181,7 +180,7 @@ class PracticeHook : BaseHook() {
                         List::class.java.isAssignableFrom(it.type)
                     }?.get(param.thisObject) as List<*>
                     var totalTime = 0
-                    dataList.subList(1, dataList.size - 1).forEach { data ->
+                    dataList.subList(1, dataList.size - 1).forEachIndexed { index, data ->
                         val answers =
                             XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
                         answers?.let {
@@ -189,9 +188,13 @@ class PracticeHook : BaseHook() {
                                 XposedHelpers.callMethod(data, "setUserAnswer", it[0])
                             }
                         }
-                        val costTime = Random.nextInt(200, 800)
+                        val costTime = if (index == 0) {
+                            2000 + Random.nextInt(200, 800)
+                        } else {
+                            Random.nextInt(200, 800)
+                        }
                         XposedHelpers.callMethod(data, "setCostTime", costTime)
-                        XposedHelpers.callMethod(data, "setStrokes", strokes.toList())
+                        XposedHelpers.callMethod(data, "setStrokes", strokes)
                         totalTime += costTime
                     }
                     val wrapper = modelWrapper
@@ -211,18 +214,7 @@ class PracticeHook : BaseHook() {
             }
         }
 
-        hookApiServiceCompanion()
-
         hookSimpleWebActivityCompanion()
-    }
-
-    private fun hookApiServiceCompanion() {
-        val oralApiServiceCompanionClass = findClass("${Classname.ORAL_API_SERVICE}\$a")
-        val unhooks = arrayOf<Unhook?>(null)
-        oralApiServiceCompanionClass.findMethod("a").after { param ->
-            OralApiService.init(param.result)
-            unhooks.forEach { it?.unhook() }
-        }.also { unhooks[0] = it }
     }
 
     private fun showEditAlertDialog(context: Context, onConfirm: (Int) -> Unit) {
@@ -232,7 +224,11 @@ class PracticeHook : BaseHook() {
 
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics).toInt()
+            val padding = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP,
+                16f,
+                context.resources.displayMetrics
+            ).toInt()
             setPaddingRelative(padding, padding, padding, 0)
             addView(editText)
         }
@@ -276,7 +272,11 @@ class PracticeHook : BaseHook() {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setHorizontalGravity(Gravity.END)
-            val padding = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics).toInt()
+            val padding = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP,
+                16f,
+                context.resources.displayMetrics
+            ).toInt()
             setPaddingRelative(padding, padding, padding, 0)
             addView(progressBar)
             addView(textView)
@@ -298,6 +298,37 @@ class PracticeHook : BaseHook() {
                 textView.text = "$current/$target"
                 if (progress >= 100) {
                     dialog.getButton(DialogInterface.BUTTON_NEGATIVE).text = "完成"
+                }
+            }
+        }
+    }
+
+    private fun testDelay() {
+        thread {
+            var delay = 300
+            val lock = ReentrantLock()
+            val condition = lock.newCondition()
+            var active = true
+            var count = 0
+            while (active) {
+                lock.withLock {
+                    condition.await(delay.toLong(), TimeUnit.MILLISECONDS)
+                    OralApiService.getExamInfo {
+                        lock.withLock {
+                            if (it.isSuccess) {
+                                count++
+                                if (count >= 5) {
+                                    active = false
+                                }
+                                logI("delay: $delay")
+                            } else {
+                                count = 0
+                                delay += 100
+                                condition.signalAll()
+                            }
+                        }
+                    }
+                    condition.await()
                 }
             }
         }
@@ -380,18 +411,16 @@ class PracticeHook : BaseHook() {
     ) {
         private val lock = ReentrantLock()
 
-        private val uploadResultCondition = lock.newCondition()
-
-        private var pendingCount: Int = 0
+        private val getExamInfoCondition = lock.newCondition()
 
         private var successCount: Int = 0
-
-        private val semaphore: Semaphore = Semaphore(5)
 
         @Volatile
         private var active: Boolean = true
 
         private var thread: Thread? = null
+
+        private var lastReqTime: Long = 0L
 
         fun stopHonor() {
             active = false
@@ -404,24 +433,32 @@ class PracticeHook : BaseHook() {
                 return
             }
             thread = thread {
+                var waitTime = 800L
                 while (active && !Thread.interrupted()) {
                     try {
                         lock.withLock {
-                            while (successCount < targetCount && successCount + pendingCount >= targetCount) {
-                                uploadResultCondition.await()
-                            }
                             if (successCount >= targetCount) {
                                 stopHonor()
                                 return@thread
                             }
-                        }
-                        semaphore.acquire()
-                        OralApiService.getExamInfo { result ->
-                            semaphore.release()
-                            result.onSuccess {
-                                handleExamVO(it)
-                            }.onFailure {
-                                logI(it)
+                            lastReqTime = SystemClock.elapsedRealtime()
+                            OralApiService.getExamInfo { result ->
+                                lock.withLock {
+                                    result.onSuccess {
+                                        logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
+                                        handleExamVO(it)
+                                    }.onFailure {
+                                        logI(it)
+                                        waitTime += 50
+                                        logI("waitTime: $waitTime")
+                                        getExamInfoCondition.signalAll()
+                                    }
+                                }
+                            }
+                            getExamInfoCondition.await(waitTime, TimeUnit.MILLISECONDS)
+                            val elapsed = SystemClock.elapsedRealtime() - lastReqTime
+                            if (elapsed < waitTime) {
+                                getExamInfoCondition.await(waitTime - elapsed, TimeUnit.MILLISECONDS)
                             }
                         }
                     } catch (_: InterruptedException) {
@@ -444,11 +481,6 @@ class PracticeHook : BaseHook() {
         }
 
         private fun buildAndUploadExamResult(examVO: Any) {
-            lock.withLock {
-                if (successCount + pendingCount >= targetCount) {
-                    return
-                }
-            }
             val examId = XposedHelpers.getObjectField(examVO, "idString").toString()
             val questions = XposedHelpers.getObjectField(examVO, "questions") as List<*>
             var totalTime = 0L
@@ -467,23 +499,30 @@ class PracticeHook : BaseHook() {
             val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
             XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
             XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
-            lock.withLock {
-                pendingCount += 1
-            }
-            OralApiService.uploadExamResult(examId, examVO) {
-                lock.withLock {
-                    pendingCount -= 1
-                    if (it.isSuccess) {
-                        successCount += 1
+
+            val runnable = object : Runnable {
+                override fun run() {
+                    lock.withLock {
+                        lastReqTime = SystemClock.elapsedRealtime()
                     }
-                    uploadResultCondition.signalAll()
-                }
-                it.onFailure {
-                    logI(it)
-                }.onSuccess {
-                    onProgress(successCount, targetCount)
+                    OralApiService.uploadExamResult(examId, examVO) {
+                        lock.withLock {
+                            if (it.isSuccess) {
+                                successCount += 1
+                                getExamInfoCondition.signalAll()
+                            }
+                        }
+                        it.onFailure {
+                            logI(it)
+                            executor.execute(this)
+                        }.onSuccess {
+                            logI("upload elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
+                            onProgress(successCount, targetCount)
+                        }
+                    }
                 }
             }
+            runnable.run()
         }
     }
 }

@@ -9,7 +9,7 @@ import android.preference.PreferenceFragment
 import android.preference.PreferenceManager
 import android.preference.SwitchPreference
 import cn.tinyhai.auto_oral_calculation.BuildConfig
-import cn.tinyhai.auto_oral_calculation.PREFS_NAME
+import cn.tinyhai.auto_oral_calculation.MODULE_PREFS_NAME
 import cn.tinyhai.auto_oral_calculation.R
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
 import cn.tinyhai.auto_oral_calculation.util.StringRes
@@ -48,7 +48,7 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        preferenceManager.sharedPreferencesName = PREFS_NAME
+        preferenceManager.sharedPreferencesName = MODULE_PREFS_NAME
         addPreferencesFromResource(R.xml.host_settings)
         holder = Holder(preferenceManager, StringRes(resources))
         initPreference()
