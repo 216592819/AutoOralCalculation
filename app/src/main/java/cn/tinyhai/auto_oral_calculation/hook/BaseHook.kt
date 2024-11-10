@@ -10,6 +10,15 @@ import java.lang.reflect.Method
 
 abstract class BaseHook {
 
+    private fun XC_MethodHook.MethodHookParam.runBlockCatching(block: (XC_MethodHook.MethodHookParam) -> Unit) {
+        kotlin.runCatching {
+            block(this)
+        }.onFailure {
+            logI("failure in $method")
+            logI(it)
+        }
+    }
+
     fun findClass(className: String): Class<*> {
         return XposedHelpers.findClass(className, lp.classLoader)
     }
@@ -17,7 +26,7 @@ abstract class BaseHook {
     fun Method.before(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
         return XposedBridge.hookMethod(this, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                block(param)
+                param.runBlockCatching(block)
             }
         })
     }
@@ -25,7 +34,7 @@ abstract class BaseHook {
     fun Method.after(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
         return XposedBridge.hookMethod(this, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                block(param)
+                param.runBlockCatching(block)
             }
         })
     }
@@ -33,7 +42,7 @@ abstract class BaseHook {
     fun List<Method>.before(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
         val callback = object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                block(param)
+                param.runBlockCatching(block)
             }
         }
         return map {
@@ -44,7 +53,7 @@ abstract class BaseHook {
     fun List<Method>.after(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
         val callback = object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                block(param)
+                param.runBlockCatching(block)
             }
         }
         return map {

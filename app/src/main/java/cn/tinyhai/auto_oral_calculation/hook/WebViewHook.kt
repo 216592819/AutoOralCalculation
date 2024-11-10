@@ -10,6 +10,7 @@ import cn.tinyhai.auto_oral_calculation.XposedInit.Companion.moduleRes
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
 import cn.tinyhai.auto_oral_calculation.util.PK
 import cn.tinyhai.auto_oral_calculation.util.logI
+import cn.tinyhai.auto_oral_calculation.util.strokesJsonString
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -278,7 +279,8 @@ class WebViewHook : BaseHook() {
 
     private fun hookDataEncrypt(caller: Class<*>) {
         caller.allMethod("call").before { param ->
-            if (PK.mode != AutoAnswerMode.QUICK) {
+            val mode = PK.mode
+            if (mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
                 return@before
             }
             val bean = param.args[0]
@@ -293,21 +295,28 @@ class WebViewHook : BaseHook() {
                 return@before
             }
             runCatching {
+                val questions = json.getJSONArray("questions")
+                for (i in 0 until questions.length()) {
+                    val question = questions.getJSONObject(i)
+                    question.put("script", strokesJsonString)
+                }
                 val questionCnt = json.getInt("questionCnt")
-                val appropriateCostTime = appropriateCostTime.get()
-                val costTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
-                    appropriateCostTime
-                } else {
-                    getSimulateCostTime(questionCnt).let {
-                        if (it > 0) {
-                            it
-                        } else {
-                            questionCnt * 200L
+                if (mode == AutoAnswerMode.QUICK) {
+                    val appropriateCostTime = appropriateCostTime.get()
+                    val costTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
+                        appropriateCostTime
+                    } else {
+                        getSimulateCostTime(questionCnt).let {
+                            if (it > 0) {
+                                it
+                            } else {
+                                questionCnt * 200L
+                            }
                         }
                     }
+                    logI("originCostTime: ${json.get("costTime")}, costTime: $costTime")
+                    json.put("costTime", costTime)
                 }
-                logI("originCostTime: ${json.get("costTime")}, costTime: $costTime")
-                json.put("costTime", costTime)
                 val newBase64 = Base64.encode(json.toString().toByteArray(), 0).decodeToString()
                 XposedHelpers.setObjectField(bean, "base64", newBase64)
             }.onFailure {

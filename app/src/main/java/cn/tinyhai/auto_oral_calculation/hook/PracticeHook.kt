@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -28,9 +27,9 @@ import cn.tinyhai.auto_oral_calculation.api.OralApiService
 import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
+import cn.tinyhai.auto_oral_calculation.util.strokes
+import cn.tinyhai.auto_oral_calculation.util.strokesJsonString
 import de.robv.android.xposed.XposedHelpers
-import org.json.JSONArray
-import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
@@ -42,6 +41,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 
 class PracticeHook : BaseHook() {
@@ -85,42 +85,6 @@ class PracticeHook : BaseHook() {
     private lateinit var presenterRef: WeakReference<Any>
 
     private val presenter get() = presenterRef.get()
-
-    private val strokes: List<Array<PointF>> get() {
-        var x = Random.nextInt(233, 666) + Random.nextFloat() * 100
-        var y = Random.nextInt(233, 666) + Random.nextFloat() * 100
-        val deltaX = 22.222f
-        val deltaY = 22.222f
-        val list = ArrayList<Array<PointF>>()
-        val points = arrayListOf(PointF(x, y))
-        repeat(4) {
-            x += deltaX
-            y += deltaY
-            points.add(PointF(x, y))
-        }
-        repeat(8) {
-            x += deltaX
-            y -= deltaY
-            points.add(PointF(x, y))
-        }
-        list.add(points.toTypedArray())
-        return list
-    }
-
-    private val strokesJson: String get() {
-        val jsonArray = JSONArray()
-        strokes.forEach {
-            val arr = JSONArray()
-            it.forEach { point ->
-                val p = JSONObject()
-                p.put("x", point.x)
-                p.put("y", point.y)
-                arr.put(p)
-            }
-            jsonArray.put(arr)
-        }
-        return jsonArray.toString()
-    }
 
     override fun startHook() {
         val quickExercisePresenterClass = findClass(Classname.PRESENTER)
@@ -448,10 +412,12 @@ class PracticeHook : BaseHook() {
                                         logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
                                         handleExamVO(it)
                                     }.onFailure {
-                                        logI(it)
-                                        waitTime += 50
-                                        logI("waitTime: $waitTime")
-                                        getExamInfoCondition.signalAll()
+                                        if (it !is CancellationException) {
+                                            logI(it)
+                                            waitTime += 50
+                                            logI("waitTime: $waitTime")
+                                            getExamInfoCondition.signalAll()
+                                        }
                                     }
                                 }
                             }
@@ -492,7 +458,7 @@ class PracticeHook : BaseHook() {
                 }
                 val costTime = Random.nextInt(233, 2333)
                 XposedHelpers.callMethod(it, "setCostTime", costTime)
-                XposedHelpers.callMethod(it, "setScript", strokesJson)
+                XposedHelpers.callMethod(it, "setScript", strokesJsonString)
                 XposedHelpers.callMethod(it, "setStatus", 1)
                 totalTime += costTime
             }
@@ -513,8 +479,10 @@ class PracticeHook : BaseHook() {
                             }
                         }
                         it.onFailure {
-                            logI(it)
-                            executor.execute(this)
+                            if (it !is CancellationException) {
+                                logI(it)
+                                executor.execute(this)
+                            }
                         }.onSuccess {
                             logI("upload elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
                             onProgress(successCount, targetCount)
