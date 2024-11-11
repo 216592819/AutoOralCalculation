@@ -1,5 +1,6 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
+import android.app.AndroidAppHelper
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
@@ -8,17 +9,22 @@ import android.webkit.JavascriptInterface
 import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.XposedInit.Companion.moduleRes
 import cn.tinyhai.auto_oral_calculation.entities.AutoAnswerMode
+import cn.tinyhai.auto_oral_calculation.util.Debug
 import cn.tinyhai.auto_oral_calculation.util.PK
 import cn.tinyhai.auto_oral_calculation.util.logI
-import cn.tinyhai.auto_oral_calculation.util.strokesJsonString
+import cn.tinyhai.auto_oral_calculation.util.pathPoints
+import cn.tinyhai.auto_oral_calculation.util.toJSONArray
+import cn.tinyhai.auto_oral_calculation.util.toJsonString
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import org.json.JSONObject
+import java.io.File
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 import kotlin.math.roundToLong
 import kotlin.random.Random
 
@@ -280,7 +286,7 @@ class WebViewHook : BaseHook() {
     private fun hookDataEncrypt(caller: Class<*>) {
         caller.allMethod("call").before { param ->
             val mode = PK.mode
-            if (mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
+            if (!Debug.debug && mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
                 return@before
             }
             val bean = param.args[0]
@@ -294,11 +300,17 @@ class WebViewHook : BaseHook() {
             if (!json.has("pkIdStr")) {
                 return@before
             }
+            if (mode !in arrayOf(AutoAnswerMode.QUICK, AutoAnswerMode.STANDARD)) {
+                return@before
+            }
             runCatching {
                 val questions = json.getJSONArray("questions")
                 for (i in 0 until questions.length()) {
+                    val pathPoints = pathPoints.toJSONArray()
                     val question = questions.getJSONObject(i)
-                    question.put("script", strokesJsonString)
+                    val curTrueAnswer = question.getJSONObject("curTrueAnswer")
+                    curTrueAnswer.put("pathPoints", pathPoints)
+                    question.put("script", pathPoints.toString())
                 }
                 val questionCnt = json.getInt("questionCnt")
                 if (mode == AutoAnswerMode.QUICK) {
@@ -316,6 +328,15 @@ class WebViewHook : BaseHook() {
                     }
                     logI("originCostTime: ${json.get("costTime")}, costTime: $costTime")
                     json.put("costTime", costTime)
+                }
+                if (Debug.debug) {
+                    thread {
+                        val file = File(
+                            AndroidAppHelper.currentApplication().externalCacheDir,
+                            "${System.currentTimeMillis()}.json"
+                        )
+                        file.writeText(json.toString())
+                    }
                 }
                 val newBase64 = Base64.encode(json.toString().toByteArray(), 0).decodeToString()
                 XposedHelpers.setObjectField(bean, "base64", newBase64)

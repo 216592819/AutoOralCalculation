@@ -78,3 +78,8 @@ object PK {
             }.getOrElse { 1500 }
         }
 }
+
+object Debug {
+    val debug
+        get() = modulePrefs.getBoolean(moduleStringRes.KEY_DEBUG, false)
+}

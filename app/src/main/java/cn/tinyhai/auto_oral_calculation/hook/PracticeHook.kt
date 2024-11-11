@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -28,7 +29,7 @@ import cn.tinyhai.auto_oral_calculation.util.Practice
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import cn.tinyhai.auto_oral_calculation.util.strokes
-import cn.tinyhai.auto_oral_calculation.util.strokesJsonString
+import cn.tinyhai.auto_oral_calculation.util.toJsonString
 import de.robv.android.xposed.XposedHelpers
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
@@ -46,35 +47,59 @@ import kotlin.random.Random
 
 class PracticeHook : BaseHook() {
 
-    private inner class ExerciseGeneralModelWrapper(model: Any) {
-        private val getExerciseType: Method
-        private val buildUri: Method
-        private val gotoResult: Method
+    private class ExerciseGeneralModelWrapper(modelClass: Class<*>, exerciseTypeClass: Class<*>) {
+        private val getExerciseType: Method = modelClass.methods.first {
+            it.returnType == exerciseTypeClass && it.parameterCount == 0
+        }.also { it.isAccessible = true }
 
-        init {
-            val exerciseTypeClass = findClass(Classname.EXERCISE_TYPE)
-            val modelClass = model::class.java
-            getExerciseType = modelClass.methods.first {
-                it.returnType == exerciseTypeClass && it.parameterCount == 0
-            }.also { it.isAccessible = true }
-            buildUri = modelClass.methods.first {
-                it.returnType == Uri::class.java && it.parameterCount == 2
-            }.also { it.isAccessible = true }
-            gotoResult = modelClass.methods.first {
-                it.returnType == Void.TYPE && it.parameterCount > 1 && it.parameterTypes[0] == Context::class.java
-            }.also { it.isAccessible = true }
+        private val buildUri: Method = modelClass.methods.first {
+            it.returnType == Uri::class.java && it.parameterCount == 2
+        }.also { it.isAccessible = true }
+
+        private val gotoResult: Method = modelClass.methods.first {
+            it.returnType == Void.TYPE && it.parameterCount > 1 && it.parameterTypes[0] == Context::class.java
+        }.also { it.isAccessible = true }
+
+        fun Any.getExerciseType(): Any? {
+            return getExerciseType.invoke(this)
         }
 
-        fun getExerciseType(model: Any): Any? {
-            return getExerciseType.invoke(model)
+        fun Any.buildUri(costTime: Long, dataList: List<*>): Any? {
+            return buildUri.invoke(this, costTime, dataList)
         }
 
-        fun buildUri(model: Any, costTime: Long, dataList: List<*>): Any? {
-            return buildUri.invoke(model, costTime, dataList)
+        fun Any.gotoResult(context: Context, intent: Intent, uri: Uri, exerciseType: Int) {
+            gotoResult.invoke(this, context, intent, uri, exerciseType)
+        }
+    }
+
+    private class QuickExercisePresenterWrapper(presenterClass: Class<*>) {
+        private val startExercise: Method = presenterClass.declaredMethods.first { it.name == "c" }
+
+        private val getAnswers: Method = presenterClass.declaredMethods.first { it.name == "g" }
+
+        private val commitAnswer: Method = presenterClass.declaredMethods.first {
+            it.name == "e" && it.parameterCount == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == List::class.java
         }
 
-        fun gotoResult(model: Any, context: Context, intent: Intent, uri: Uri, exerciseType: Int) {
-            gotoResult.invoke(model, context, intent, uri, exerciseType)
+        private val nextQuestion: Method = presenterClass.declaredMethods.first {
+            it.name == "d" && it.parameterCount == 2 && it.parameterTypes[0] == Boolean::class.javaPrimitiveType && it.parameterTypes[1] == List::class.java
+        }
+
+        fun Any.startExercise() {
+            startExercise.invoke(this)
+        }
+
+        fun Any.getAnswers(): List<*>? {
+            return getAnswers.invoke(this) as? List<*>
+        }
+
+        fun Any.commitAnswer(answer: String) {
+            commitAnswer.invoke(this, answer, null /*wrongScript*/)
+        }
+
+        fun Any.nextQuestion(autoJump: Boolean, strokes: List<Array<PointF>>) {
+            nextQuestion.invoke(this, autoJump, strokes)
         }
     }
 
@@ -87,25 +112,27 @@ class PracticeHook : BaseHook() {
     private val presenter get() = presenterRef.get()
 
     override fun startHook() {
-        val quickExercisePresenterClass = findClass(Classname.PRESENTER)
-        val startExercise = quickExercisePresenterClass.findMethod("c")
-        val getAnswers = quickExercisePresenterClass.findMethod("g")
-        val commitAnswer =
-            quickExercisePresenterClass.findMethod("e", String::class.java, List::class.java)
+        val quickExerciseActivityClass = findClass(Classname.QUICK_EXERCISE_ACTIVITY)
 
-        val nextQuestion = quickExercisePresenterClass.findMethod(
-            "d",
-            Boolean::class.javaPrimitiveType!!,
-            List::class.java
-        )
+        hookQuickExerciseActivity(quickExerciseActivityClass)
+
+        hookQuickExercisePresenter(quickExerciseActivityClass)
+
+        hookSimpleWebActivityCompanion()
+    }
+
+    private fun hookQuickExercisePresenter(quickExerciseActivityClass: Class<*>) {
+        val quickExercisePresenterClass = findClass(Classname.PRESENTER)
+        val presenterWrapper = QuickExercisePresenterWrapper(quickExercisePresenterClass)
         val performNext = Runnable {
             if (Practice.autoPractice) {
-                presenter?.let {
-                    startExercise.invoke(it)
-                    val answer = (getAnswers(it) as? List<*>)?.get(0).toString()
-                    logI("answer: $answer")
-                    commitAnswer.invoke(it, answer, null)
-                    nextQuestion.invoke(it, true, strokes.toList())
+                with(presenterWrapper) {
+                    presenter?.run {
+                        startExercise()
+                        val answer = getAnswers()?.get(0).toString()
+                        commitAnswer(answer)
+                        nextQuestion(true, strokes.toList())
+                    }
                 }
             }
         }
@@ -116,17 +143,13 @@ class PracticeHook : BaseHook() {
             }
         }
 
-        val quickExerciseActivityClass = findClass(Classname.QUICK_EXERCISE_ACTIVITY)
-        hookQuickExerciseActivity(quickExerciseActivityClass)
-
         val modelClass =
-            (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments.getOrNull(
-                1
-            )
+            (quickExerciseActivityClass.genericSuperclass as ParameterizedType).actualTypeArguments[1]
         val getGeneralModel =
-            quickExerciseActivityClass.declaredMethods.firstOrNull { it.returnType == modelClass && it.parameterCount == 0 }
-                ?.also { it.isAccessible = true }
-        var modelWrapper: ExerciseGeneralModelWrapper? = null
+            quickExerciseActivityClass.declaredMethods.first { it.returnType == modelClass && it.parameterCount == 0 }
+                .also { it.isAccessible = true }
+        val modelWrapper =
+            ExerciseGeneralModelWrapper(modelClass as Class<*>, findClass(Classname.EXERCISE_TYPE))
         // afterLoadFinish
         quickExercisePresenterClass.declaredMethods.first {
             it.parameterCount == 1 && List::class.java.isAssignableFrom(it.parameterTypes[0])
@@ -139,14 +162,13 @@ class PracticeHook : BaseHook() {
                 kotlin.runCatching {
                     val v = XposedHelpers.getObjectField(param.thisObject, "a")
                     val activity = XposedHelpers.callMethod(v, "getContext") as Activity
-                    val model = getGeneralModel?.invoke(activity)!!
+                    val model = getGeneralModel.invoke(activity)
                     val dataList = quickExercisePresenterClass.declaredFields.firstOrNull {
                         List::class.java.isAssignableFrom(it.type)
                     }?.get(param.thisObject) as List<*>
                     var totalTime = 0
                     dataList.subList(1, dataList.size - 1).forEachIndexed { index, data ->
-                        val answers =
-                            XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
+                        val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
                         answers?.let {
                             if (it.isNotEmpty()) {
                                 XposedHelpers.callMethod(data, "setUserAnswer", it[0])
@@ -161,15 +183,17 @@ class PracticeHook : BaseHook() {
                         XposedHelpers.callMethod(data, "setStrokes", strokes)
                         totalTime += costTime
                     }
-                    val wrapper = modelWrapper
-                        ?: ExerciseGeneralModelWrapper(model).also { modelWrapper = it }
-                    val exerciseType = wrapper.getExerciseType(model)
-                    val exerciseTypeInt =
-                        XposedHelpers.getIntField(exerciseType, "exerciseType")
-                    val intent = activity.intent
-                    val uri = wrapper.buildUri(model, totalTime.toLong(), dataList) as Uri
-                    wrapper.gotoResult(model, activity, intent, uri, exerciseTypeInt)
-                    activity.finish()
+                    with(modelWrapper) {
+                        model?.run {
+                            val exerciseType = getExerciseType()
+                            val exerciseTypeInt =
+                                XposedHelpers.getIntField(exerciseType, "exerciseType")
+                            val intent = activity.intent
+                            val uri = buildUri(totalTime.toLong(), dataList) as Uri
+                            gotoResult(activity, intent, uri, exerciseTypeInt)
+                            activity.finish()
+                        }
+                    }
                 }.onFailure {
                     logI(it)
                 }
@@ -177,8 +201,6 @@ class PracticeHook : BaseHook() {
                 mainHandler.post(performNext)
             }
         }
-
-        hookSimpleWebActivityCompanion()
     }
 
     private fun showEditAlertDialog(context: Context, onConfirm: (Int) -> Unit) {
@@ -189,24 +211,18 @@ class PracticeHook : BaseHook() {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             val padding = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP,
-                16f,
-                context.resources.displayMetrics
+                TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics
             ).toInt()
             setPaddingRelative(padding, padding, padding, 0)
             addView(editText)
         }
 
-        val dialog = AlertDialog.Builder(context)
-            .setPositiveButton(android.R.string.ok) { d, _ ->
-                val targetCount =
-                    kotlin.runCatching { editText.text.toString().toInt() }.getOrElse { 0 }
-                onConfirm(targetCount)
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .setTitle("请输入练习次数")
-            .setView(container)
-            .show()
+        val dialog = AlertDialog.Builder(context).setPositiveButton(android.R.string.ok) { d, _ ->
+            val targetCount =
+                kotlin.runCatching { editText.text.toString().toInt() }.getOrElse { 0 }
+            onConfirm(targetCount)
+        }.setNegativeButton(android.R.string.cancel, null).setTitle("请输入练习次数")
+            .setView(container).show()
         val positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
         positiveButton.isEnabled = false
         editText.addTextChangedListener(object : TextWatcher {
@@ -224,8 +240,7 @@ class PracticeHook : BaseHook() {
     private fun showProgressDialog(context: Context, onDismiss: () -> Unit): (Int, Int) -> Unit {
         val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal)
         progressBar.layoutParams = LayoutParams(
-            LayoutParams.MATCH_PARENT,
-            LayoutParams.WRAP_CONTENT
+            LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT
         )
         val textView = TextView(context).apply {
             text = "0/0"
@@ -237,24 +252,16 @@ class PracticeHook : BaseHook() {
             orientation = LinearLayout.VERTICAL
             setHorizontalGravity(Gravity.END)
             val padding = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP,
-                16f,
-                context.resources.displayMetrics
+                TypedValue.COMPLEX_UNIT_DIP, 16f, context.resources.displayMetrics
             ).toInt()
             setPaddingRelative(padding, padding, padding, 0)
             addView(progressBar)
             addView(textView)
         }
-        val dialog = AlertDialog
-            .Builder(context)
-            .setTitle("练习进度")
-            .setView(container)
-            .setNegativeButton("停止", null)
-            .setCancelable(false)
-            .setOnDismissListener {
+        val dialog = AlertDialog.Builder(context).setTitle("练习进度").setView(container)
+            .setNegativeButton("停止", null).setCancelable(false).setOnDismissListener {
                 onDismiss()
-            }
-            .show()
+            }.show()
         return { current, target ->
             mainHandler.post {
                 val progress = (100 * (current / target.toFloat())).toInt().coerceIn(0, 100)
@@ -267,32 +274,39 @@ class PracticeHook : BaseHook() {
         }
     }
 
-    private fun testDelay() {
+    private fun testDelay(keyPointId: String, limit: Int) {
         thread {
-            var delay = 300
+            var delay = 800L
+            var lastReqTime: Long
             val lock = ReentrantLock()
             val condition = lock.newCondition()
             var active = true
             var count = 0
+            Thread.sleep(1000L)
             while (active) {
                 lock.withLock {
-                    condition.await(delay.toLong(), TimeUnit.MILLISECONDS)
-                    OralApiService.getExamInfo {
+                    lastReqTime = SystemClock.elapsedRealtime()
+                    logI("req start with delay: $delay")
+                    OralApiService.getExamInfo(keyPointId, limit) {
                         lock.withLock {
                             if (it.isSuccess) {
                                 count++
-                                if (count >= 5) {
+                                if (count >= 30) {
                                     active = false
+                                    logI("final delay: $delay")
                                 }
-                                logI("delay: $delay")
                             } else {
                                 count = 0
-                                delay += 100
-                                condition.signalAll()
+                                delay += 50
                             }
+                            condition.signalAll()
                         }
                     }
-                    condition.await()
+                    condition.await(delay, TimeUnit.MILLISECONDS)
+                    val elapsed = SystemClock.elapsedRealtime() - lastReqTime
+                    if (elapsed < delay) {
+                        condition.await(delay - elapsed, TimeUnit.MILLISECONDS)
+                    }
                 }
             }
         }
@@ -316,15 +330,15 @@ class PracticeHook : BaseHook() {
             val coroutineContext = XposedHelpers.callMethod(scope, "getCoroutineContext")
             val model = getGeneralModel?.invoke(activity) ?: return@after
             val keyPointId = XposedHelpers.getIntField(model, "a").toString()
-            val limit = XposedHelpers.getIntField(model, "c").toString()
+            val limit = XposedHelpers.getIntField(model, "c")
 
-            OralApiService.setup(coroutineContext, keyPointId, limit)
+            OralApiService.setup(coroutineContext)
             if (Practice.autoHonor) {
                 showEditAlertDialog(activity as Context) { targetCount ->
                     val onProgressChange = showProgressDialog(activity) {
                         helper?.stopHonor()
                     }
-                    helper = HonorHelper(targetCount, onProgressChange).also {
+                    helper = HonorHelper(keyPointId, limit, targetCount, onProgressChange).also {
                         it.startHonor()
                     }
                 }
@@ -337,8 +351,7 @@ class PracticeHook : BaseHook() {
     }
 
     private fun hookSimpleWebActivityCompanion() {
-        val exerciseResultActivityClass =
-            findClass(Classname.EXERCISE_RESULT_ACTIVITY)
+        val exerciseResultActivityClass = findClass(Classname.EXERCISE_RESULT_ACTIVITY)
         val simpleWebActivityCompanionClass =
             findClass("${Classname.SIMPLE_WEB_APP_FIREWORK_ACTIVITY}\$a")
 
@@ -354,9 +367,7 @@ class PracticeHook : BaseHook() {
                         kotlin.runCatching {
                             activity.findViewById<View>(
                                 activity.resources.getIdentifier(
-                                    "menu_button_again_btn",
-                                    "id",
-                                    activity.packageName
+                                    "menu_button_again_btn", "id", activity.packageName
                                 )
                             ).performClick()
                         }.onFailure {
@@ -370,6 +381,8 @@ class PracticeHook : BaseHook() {
     }
 
     private inner class HonorHelper(
+        private val keyPointId: String,
+        private val limit: Int,
         private val targetCount: Int = Int.MAX_VALUE,
         private val onProgress: (Int, Int) -> Unit
     ) {
@@ -382,13 +395,11 @@ class PracticeHook : BaseHook() {
         @Volatile
         private var active: Boolean = true
 
-        private var thread: Thread? = null
-
-        private var lastReqTime: Long = 0L
+        private var workerThread: Thread? = null
 
         fun stopHonor() {
             active = false
-            thread?.interrupt()
+            workerThread?.interrupt()
         }
 
         fun startHonor() {
@@ -396,39 +407,44 @@ class PracticeHook : BaseHook() {
                 stopHonor()
                 return
             }
-            thread = thread {
-                var waitTime = 800L
-                while (active && !Thread.interrupted()) {
-                    try {
-                        lock.withLock {
-                            if (successCount >= targetCount) {
-                                stopHonor()
-                                return@thread
-                            }
-                            lastReqTime = SystemClock.elapsedRealtime()
-                            OralApiService.getExamInfo { result ->
-                                lock.withLock {
-                                    result.onSuccess {
-                                        logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
-                                        handleExamVO(it)
-                                    }.onFailure {
-                                        if (it !is CancellationException) {
-                                            logI(it)
-                                            waitTime += 50
-                                            logI("waitTime: $waitTime")
-                                            getExamInfoCondition.signalAll()
-                                        }
+            workerThread = thread {
+                doWork()
+            }
+        }
+
+        private fun doWork() {
+            var lastReqTime: Long
+            var waitTime = 800L
+            while (active && !Thread.interrupted()) {
+                try {
+                    lock.withLock {
+                        if (successCount >= targetCount) {
+                            stopHonor()
+                            return
+                        }
+                        lastReqTime = SystemClock.elapsedRealtime()
+                        OralApiService.getExamInfo(keyPointId, limit) { result ->
+                            lock.withLock {
+                                result.onSuccess {
+                                    logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
+                                    handleExamVO(it)
+                                }.onFailure {
+                                    if (it !is CancellationException) {
+                                        waitTime += 50
+                                        logI("waitTime: $waitTime")
+                                        logI("get exam failed: ${it.message}")
+                                        getExamInfoCondition.signalAll()
                                     }
                                 }
                             }
-                            getExamInfoCondition.await(waitTime, TimeUnit.MILLISECONDS)
-                            val elapsed = SystemClock.elapsedRealtime() - lastReqTime
-                            if (elapsed < waitTime) {
-                                getExamInfoCondition.await(waitTime - elapsed, TimeUnit.MILLISECONDS)
-                            }
                         }
-                    } catch (_: InterruptedException) {
+                        getExamInfoCondition.await(waitTime, TimeUnit.MILLISECONDS)
+                        val elapsed = SystemClock.elapsedRealtime() - lastReqTime
+                        if (elapsed < waitTime) {
+                            getExamInfoCondition.await(waitTime - elapsed, TimeUnit.MILLISECONDS)
+                        }
                     }
+                } catch (_: InterruptedException) {
                 }
             }
         }
@@ -446,51 +462,46 @@ class PracticeHook : BaseHook() {
             }
         }
 
-        private fun buildAndUploadExamResult(examVO: Any) {
+        private fun buildExamResult(examVO: Any): String {
             val examId = XposedHelpers.getObjectField(examVO, "idString").toString()
             val questions = XposedHelpers.getObjectField(examVO, "questions") as List<*>
             var totalTime = 0L
             questions.forEach {
-                val answers =
-                    XposedHelpers.getObjectField(it, "answers") as? List<*>
+                val answers = XposedHelpers.getObjectField(it, "answers") as? List<*>
                 if (!answers.isNullOrEmpty()) {
                     XposedHelpers.callMethod(it, "setUserAnswer", answers[0])
                 }
                 val costTime = Random.nextInt(233, 2333)
                 XposedHelpers.callMethod(it, "setCostTime", costTime)
-                XposedHelpers.callMethod(it, "setScript", strokesJsonString)
+                XposedHelpers.callMethod(it, "setScript", strokes.toJsonString())
                 XposedHelpers.callMethod(it, "setStatus", 1)
                 totalTime += costTime
             }
             val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
             XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
             XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
+            return examId
+        }
 
-            val runnable = object : Runnable {
-                override fun run() {
-                    lock.withLock {
-                        lastReqTime = SystemClock.elapsedRealtime()
-                    }
-                    OralApiService.uploadExamResult(examId, examVO) {
-                        lock.withLock {
-                            if (it.isSuccess) {
-                                successCount += 1
-                                getExamInfoCondition.signalAll()
-                            }
-                        }
-                        it.onFailure {
-                            if (it !is CancellationException) {
-                                logI(it)
-                                executor.execute(this)
-                            }
-                        }.onSuccess {
-                            logI("upload elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
-                            onProgress(successCount, targetCount)
-                        }
+        private fun buildAndUploadExamResult(examVO: Any) {
+            val examId = buildExamResult(examVO)
+            val uploadReqTime = SystemClock.elapsedRealtime()
+            OralApiService.uploadExamResult(examId, examVO) {
+                lock.withLock {
+                    if (it.isSuccess) {
+                        successCount += 1
+                        getExamInfoCondition.signalAll()
                     }
                 }
+                it.onFailure {
+                    if (it !is CancellationException) {
+                        logI("upload exam failed: ${it.message}")
+                    }
+                }.onSuccess {
+                    logI("upload exam elapsed: ${SystemClock.elapsedRealtime() - uploadReqTime}")
+                    onProgress(successCount, targetCount)
+                }
             }
-            runnable.run()
         }
     }
 }

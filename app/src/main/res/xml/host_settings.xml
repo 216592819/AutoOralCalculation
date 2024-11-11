@@ -74,6 +74,12 @@
             android:inputType="number"
             android:hint="单位毫秒，默认值1500" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="Debug">
+        <SwitchPreference
+            android:key="@string/key_debug"
+            android:title="DEBUG"
+            android:summary="没事别开"/>
+    </PreferenceCategory>
     <PreferenceCategory android:title="关于">
         <Preference
             android:key="@string/key_github"

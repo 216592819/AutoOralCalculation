@@ -20,6 +20,7 @@ class StringRes(resources: Resources) {
     val KEY_GITHUB = resources.getString(R.string.key_github)
     val KEY_VERSION = resources.getString(R.string.key_version)
     val KEY_GOTO_SETTINGS = resources.getString(R.string.key_goto_settings)
+    val KEY_DEBUG = resources.getString(R.string.key_debug)
 }
 
 val moduleStringRes by lazy {

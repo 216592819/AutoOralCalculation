@@ -72,20 +72,18 @@ object OralApiService {
         }
     }
 
-    fun setup(coroutineContext: Any, keyPointId: String, limit: String) {
+    fun setup(coroutineContext: Any) {
         this.coroutineContext = coroutineContext
-        this.keyPointId = keyPointId
-        this.limit = limit
     }
 
-    fun getExamInfo(onResult: (Result<Any>) -> Unit) {
+    fun getExamInfo(keyPointId: String, limit: Int, onResult: (Result<Any>) -> Unit) {
         val coroutineClass = getExamInfoMethod.parameterTypes[2]
         val getExamInfoProxy = Proxy.newProxyInstance(
             coroutineClass.classLoader,
             arrayOf(coroutineClass),
             ContinuationProxy(coroutineContext, onResult)
         )
-        getExamInfoMethod.invoke(apiService, keyPointId, limit, getExamInfoProxy)
+        getExamInfoMethod.invoke(apiService, keyPointId, limit.toString(), getExamInfoProxy)
     }
 
     fun uploadExamResult(examId: String, requestData: Any, onResult: (Result<Any>) -> Unit) {

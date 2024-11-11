@@ -15,4 +15,5 @@
     <string name="key_github">github</string>
     <string name="key_version">version</string>
     <string name="key_goto_settings">goto_settings</string>
+    <string name="key_debug">debug</string>
 </resources>

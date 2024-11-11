@@ -40,6 +40,7 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
         val pkCyclic: SwitchPreference = manager.findPreference(stringRes.KEY_PK_CYCLIC) as SwitchPreference
         val pkCyclicInterval: EditTextPreference =
             manager.findPreference(stringRes.KEY_PK_CYCLIC_INTERVAL) as EditTextPreference
+        val debug: SwitchPreference = manager.findPreference(stringRes.KEY_DEBUG) as SwitchPreference
         val github: Preference = manager.findPreference(stringRes.KEY_GITHUB)!!
         val version: Preference = manager.findPreference(stringRes.KEY_VERSION)!!
     }
