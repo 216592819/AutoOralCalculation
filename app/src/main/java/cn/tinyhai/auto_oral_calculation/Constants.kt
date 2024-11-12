@@ -34,9 +34,13 @@ object Classname {
 
     const val ORAL_API_SERVICE = "com.yuanfudao.android.leo.exercise.oral.ApiService"
 
+    const val LEGACY_API_SERVICE = "com.fenbi.android.leo.api.LeoExerciseCommonLegacyApiService"
+
     const val LIFECYCLE_OWNER_KT = "androidx.lifecycle.LifecycleOwnerKt"
 
     const val RETROFIT = "retrofit2.Retrofit"
+
+    const val GSON = "com.google.gson.Gson"
 }
 
 const val MODULE_PREFS_NAME = "auto_oral_calculation"

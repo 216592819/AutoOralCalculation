@@ -1,54 +1,9 @@
 package cn.tinyhai.auto_oral_calculation.api
 
-import de.robv.android.xposed.XposedHelpers
-import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
 object OralApiService {
-
-    private class ContinuationProxy(
-        private val coroutineContext: Any,
-        private val onResume: (Result<Any>) -> Unit
-    ) : InvocationHandler {
-        override fun invoke(proxy: Any?, method: Method, args: Array<out Any>?): Any? {
-            when (method.name) {
-                "getContext" -> {
-                    return coroutineContext
-                }
-
-                "resumeWith" -> {
-                    val result = args?.get(0)
-                    val ret = when {
-                        result == null -> {
-                            Result.failure(NullPointerException("result is null"))
-                        }
-
-                        result::class.java.name == "kotlin.Result\$Failure" -> {
-                            Result.failure(
-                                XposedHelpers.getObjectField(
-                                    result,
-                                    "exception"
-                                ) as Throwable
-                            )
-                        }
-
-                        result::class.java.name == "kotlin.Result" -> {
-                            Result.success(XposedHelpers.getObjectField(result, "value"))
-                        }
-
-                        else -> {
-                            Result.success(result)
-                        }
-                    }
-                    onResume(ret)
-
-                    return null
-                }
-            }
-            return null
-        }
-    }
 
     private lateinit var apiService: Any
 
@@ -58,9 +13,7 @@ object OralApiService {
 
     private lateinit var coroutineContext: Any
 
-    private lateinit var keyPointId: String
-
-    private lateinit var limit: String
+    private lateinit var coroutineClass: Class<*>
 
     fun init(apiService: Any) {
         this.apiService = apiService
@@ -70,6 +23,7 @@ object OralApiService {
         getExamInfoMethod = apiService::class.java.declaredMethods.first {
             it.name == "getExamInfo" && it.parameterCount == 3
         }
+        coroutineClass = uploadExamResultMethod.parameterTypes.last()
     }
 
     fun setup(coroutineContext: Any) {
@@ -77,7 +31,6 @@ object OralApiService {
     }
 
     fun getExamInfo(keyPointId: String, limit: Int, onResult: (Result<Any>) -> Unit) {
-        val coroutineClass = getExamInfoMethod.parameterTypes[2]
         val getExamInfoProxy = Proxy.newProxyInstance(
             coroutineClass.classLoader,
             arrayOf(coroutineClass),
@@ -87,7 +40,6 @@ object OralApiService {
     }
 
     fun uploadExamResult(examId: String, requestData: Any, onResult: (Result<Any>) -> Unit) {
-        val coroutineClass = uploadExamResultMethod.parameterTypes[2]
         val uploadExamResultProxy = Proxy.newProxyInstance(
             coroutineClass.classLoader, arrayOf(coroutineClass), ContinuationProxy(coroutineContext, onResult)
         )
