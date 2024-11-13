@@ -14,7 +14,6 @@ import cn.tinyhai.auto_oral_calculation.util.PK
 import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.pathPoints
 import cn.tinyhai.auto_oral_calculation.util.toJSONArray
-import cn.tinyhai.auto_oral_calculation.util.toJsonString
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -308,9 +307,11 @@ class WebViewHook : BaseHook() {
                 for (i in 0 until questions.length()) {
                     val pathPoints = pathPoints.toJSONArray()
                     val question = questions.getJSONObject(i)
-                    val curTrueAnswer = question.getJSONObject("curTrueAnswer")
-                    curTrueAnswer.put("pathPoints", pathPoints)
-                    question.put("script", pathPoints.toString())
+                    val curTrueAnswer = question.optJSONObject("curTrueAnswer")
+                    curTrueAnswer?.put("pathPoints", pathPoints)
+                    if (question.has("script")) {
+                        question.put("script", pathPoints.toString())
+                    }
                 }
                 val questionCnt = json.getInt("questionCnt")
                 if (mode == AutoAnswerMode.QUICK) {
