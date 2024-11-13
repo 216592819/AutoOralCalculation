@@ -34,9 +34,8 @@ import de.robv.android.xposed.XposedHelpers
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -103,8 +102,8 @@ class PracticeHook : BaseHook() {
         }
     }
 
-    private val executor: ExecutorService by lazy {
-        ThreadPoolExecutor(0, 5, 30L, TimeUnit.SECONDS, LinkedBlockingQueue(10), DiscardPolicy())
+    private val executor: ScheduledExecutorService by lazy {
+        ScheduledThreadPoolExecutor(5, DiscardPolicy())
     }
 
     private lateinit var presenterRef: WeakReference<Any>
@@ -167,18 +166,14 @@ class PracticeHook : BaseHook() {
                         List::class.java.isAssignableFrom(it.type)
                     }?.get(param.thisObject) as List<*>
                     var totalTime = 0
-                    dataList.subList(1, dataList.size - 1).forEachIndexed { index, data ->
+                    dataList.subList(1, dataList.size - 1).forEach { data ->
                         val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
                         answers?.let {
                             if (it.isNotEmpty()) {
                                 XposedHelpers.callMethod(data, "setUserAnswer", it[0])
                             }
                         }
-                        val costTime = if (index == 0) {
-                            2000 + Random.nextInt(200, 800)
-                        } else {
-                            Random.nextInt(200, 800)
-                        }
+                        val costTime = Random.nextInt(150, 250)
                         XposedHelpers.callMethod(data, "setCostTime", costTime)
                         XposedHelpers.callMethod(data, "setStrokes", strokes)
                         totalTime += costTime
@@ -390,6 +385,8 @@ class PracticeHook : BaseHook() {
 
         private val getExamInfoCondition = lock.newCondition()
 
+        private var pendingCount: Int = 0
+
         private var successCount: Int = 0
 
         @Volatile
@@ -414,14 +411,22 @@ class PracticeHook : BaseHook() {
 
         private fun doWork() {
             var lastReqTime: Long
-            var waitTime = 800L
+            var waitTime = 33L
             while (active && !Thread.interrupted()) {
                 try {
                     lock.withLock {
-                        if (successCount >= targetCount) {
-                            stopHonor()
-                            return
+                        while (pendingCount > 0 && successCount + pendingCount >= targetCount) {
+                            getExamInfoCondition.await()
+                            if (successCount >= targetCount) {
+                                stopHonor()
+                                return@withLock
+                            } else {
+                                continue
+                            }
                         }
+
+                        pendingCount += 1
+
                         lastReqTime = SystemClock.elapsedRealtime()
                         OralApiService.getExamInfo(keyPointId, limit) { result ->
                             lock.withLock {
@@ -429,8 +434,9 @@ class PracticeHook : BaseHook() {
                                     logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
                                     handleExamVO(it)
                                 }.onFailure {
+                                    pendingCount -= 1
                                     if (it !is CancellationException) {
-                                        waitTime += 50
+                                        waitTime += 1000
                                         logI("waitTime: $waitTime")
                                         logI("get exam failed: ${it.message}")
                                         getExamInfoCondition.signalAll()
@@ -462,7 +468,7 @@ class PracticeHook : BaseHook() {
             }
         }
 
-        private fun buildExamResult(examVO: Any): String {
+        private fun buildExamResult(examVO: Any): Pair<String, Long> {
             val examId = XposedHelpers.getObjectField(examVO, "idString").toString()
             val questions = XposedHelpers.getObjectField(examVO, "questions") as List<*>
             var totalTime = 0L
@@ -471,7 +477,7 @@ class PracticeHook : BaseHook() {
                 if (!answers.isNullOrEmpty()) {
                     XposedHelpers.callMethod(it, "setUserAnswer", answers[0])
                 }
-                val costTime = Random.nextInt(233, 2333)
+                val costTime = Random.nextInt(150, 250)
                 XposedHelpers.callMethod(it, "setCostTime", costTime)
                 XposedHelpers.callMethod(it, "setScript", strokes.toJsonString())
                 XposedHelpers.callMethod(it, "setStatus", 1)
@@ -480,28 +486,40 @@ class PracticeHook : BaseHook() {
             val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
             XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
             XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
-            return examId
+            return examId to totalTime
         }
 
         private fun buildAndUploadExamResult(examVO: Any) {
-            val examId = buildExamResult(examVO)
+            val (examId, delay) = buildExamResult(examVO)
             val uploadReqTime = SystemClock.elapsedRealtime()
-            OralApiService.uploadExamResult(examId, examVO) {
-                lock.withLock {
-                    if (it.isSuccess) {
-                        successCount += 1
-                        getExamInfoCondition.signalAll()
+            val runnable = object : Runnable {
+                override fun run() {
+                    OralApiService.uploadExamResult(examId, examVO) {
+                        val elapsed = SystemClock.elapsedRealtime() - uploadReqTime
+                        lock.withLock {
+                            it.onFailure {
+                                if (it !is CancellationException) {
+                                    logI("upload exam failed: ${it.message}")
+                                    if (delay > elapsed) {
+                                        executor.schedule(this, delay - elapsed, TimeUnit.MILLISECONDS)
+                                    } else {
+                                        pendingCount -= 1
+                                        getExamInfoCondition.signalAll()
+                                        logI("upload exam failed after delay: $delay")
+                                    }
+                                }
+                            }.onSuccess {
+                                successCount += 1
+                                pendingCount -= 1
+                                getExamInfoCondition.signalAll()
+                                logI("upload exam elapsed: $elapsed")
+                                onProgress(successCount, targetCount)
+                            }
+                        }
                     }
-                }
-                it.onFailure {
-                    if (it !is CancellationException) {
-                        logI("upload exam failed: ${it.message}")
-                    }
-                }.onSuccess {
-                    logI("upload exam elapsed: ${SystemClock.elapsedRealtime() - uploadReqTime}")
-                    onProgress(successCount, targetCount)
                 }
             }
+            runnable.run()
         }
     }
 }
