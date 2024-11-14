@@ -40,6 +40,8 @@ object Classname {
 
     const val RETROFIT = "retrofit2.Retrofit"
 
+    const val INTERCEPTOR = "okhttp3.Interceptor"
+
     const val GSON = "com.google.gson.Gson"
 }
 

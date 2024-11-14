@@ -10,6 +10,7 @@ import android.graphics.Color
 import android.graphics.PointF
 import android.net.Uri
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.os.SystemClock
 import android.text.Editable
 import android.text.InputFilter
@@ -30,6 +31,7 @@ import cn.tinyhai.auto_oral_calculation.util.logI
 import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import cn.tinyhai.auto_oral_calculation.util.strokes
 import cn.tinyhai.auto_oral_calculation.util.toJsonString
+import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
@@ -94,7 +96,7 @@ class PracticeHook : BaseHook() {
         }
 
         fun Any.commitAnswer(answer: String) {
-            commitAnswer.invoke(this, answer, null /*wrongScript*/)
+            commitAnswer.invoke(this, answer, emptyList<Any>() /*wrongScript*/)
         }
 
         fun Any.nextQuestion(autoJump: Boolean, strokes: List<Array<PointF>>) {
@@ -116,6 +118,8 @@ class PracticeHook : BaseHook() {
         hookQuickExerciseActivity(quickExerciseActivityClass)
 
         hookQuickExercisePresenter(quickExerciseActivityClass)
+
+        hookCountDownTimer()
 
         hookSimpleWebActivityCompanion()
     }
@@ -196,6 +200,24 @@ class PracticeHook : BaseHook() {
                 mainHandler.post(performNext)
             }
         }
+    }
+
+    private fun hookCountDownTimer() {
+        val countDownTimerClass = CountDownTimer::class.java
+        val unhooks = arrayOf<Unhook?>(null)
+        countDownTimerClass.findConstructor(Long::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!).after { param ->
+            val thisClass = param.thisObject::class.java
+            if (!thisClass.name.startsWith(Classname.PRESENTER)) {
+                return@after
+            }
+            logI("hook timer")
+            thisClass.findMethod("onFinish").before {
+                if (Practice.autoHonor) {
+                    it.result = null
+                }
+            }
+            unhooks.forEach { it?.unhook() }
+        }.also { unhooks[0] = it }
     }
 
     private fun showEditAlertDialog(context: Context, onConfirm: (Int) -> Unit) {
@@ -412,10 +434,12 @@ class PracticeHook : BaseHook() {
         private fun doWork() {
             var lastReqTime: Long
             var waitTime = 33L
+            var reqSuccessCount = 0
             while (active && !Thread.interrupted()) {
                 try {
                     lock.withLock {
-                        while (pendingCount > 0 && successCount + pendingCount >= targetCount) {
+                        logI("pendingCount: $pendingCount, successCount: $successCount")
+                        while (pendingCount >= 0 && successCount + pendingCount >= targetCount) {
                             getExamInfoCondition.await()
                             if (successCount >= targetCount) {
                                 stopHonor()
@@ -433,14 +457,21 @@ class PracticeHook : BaseHook() {
                                 result.onSuccess {
                                     logI("get exam elapsed: ${SystemClock.elapsedRealtime() - lastReqTime}")
                                     handleExamVO(it)
+                                    reqSuccessCount += 1
+                                    if (reqSuccessCount >= 10) {
+                                        waitTime = waitTime.minus(500).coerceAtLeast(33)
+                                        logI("waitTime decrease to $waitTime")
+                                        reqSuccessCount = 0
+                                    }
                                 }.onFailure {
                                     pendingCount -= 1
                                     if (it !is CancellationException) {
+                                        reqSuccessCount = 0
                                         waitTime += 1000
-                                        logI("waitTime: $waitTime")
+                                        logI("waitTime increase to $waitTime")
                                         logI("get exam failed: ${it.message}")
-                                        getExamInfoCondition.signalAll()
                                     }
+                                    getExamInfoCondition.signalAll()
                                 }
                             }
                         }
@@ -486,7 +517,7 @@ class PracticeHook : BaseHook() {
             val questionCnt = XposedHelpers.getIntField(examVO, "questionCnt")
             XposedHelpers.callMethod(examVO, "setCorrectCnt", questionCnt)
             XposedHelpers.callMethod(examVO, "setCostTime", totalTime)
-            return examId to totalTime
+            return examId to (totalTime + 200)
         }
 
         private fun buildAndUploadExamResult(examVO: Any) {
@@ -507,6 +538,9 @@ class PracticeHook : BaseHook() {
                                         getExamInfoCondition.signalAll()
                                         logI("upload exam failed after delay: $delay")
                                     }
+                                } else {
+                                    pendingCount -= 1
+                                    getExamInfoCondition.signalAll()
                                 }
                             }.onSuccess {
                                 successCount += 1

@@ -6,6 +6,8 @@ import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import java.lang.reflect.Constructor
+import java.lang.reflect.Member
 import java.lang.reflect.Method
 
 abstract class BaseHook {
@@ -23,7 +25,7 @@ abstract class BaseHook {
         return XposedHelpers.findClass(className, lp.classLoader)
     }
 
-    fun Method.before(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
+    fun Member.before(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
         return XposedBridge.hookMethod(this, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 param.runBlockCatching(block)
@@ -31,7 +33,7 @@ abstract class BaseHook {
         })
     }
 
-    fun Method.after(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
+    fun Member.after(block: (XC_MethodHook.MethodHookParam) -> Unit): Unhook {
         return XposedBridge.hookMethod(this, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 param.runBlockCatching(block)
@@ -39,7 +41,7 @@ abstract class BaseHook {
         })
     }
 
-    fun List<Method>.before(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
+    fun List<Member>.before(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
         val callback = object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 param.runBlockCatching(block)
@@ -50,7 +52,7 @@ abstract class BaseHook {
         }
     }
 
-    fun List<Method>.after(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
+    fun List<Member>.after(block: (XC_MethodHook.MethodHookParam) -> Unit): List<Unhook> {
         val callback = object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 param.runBlockCatching(block)
@@ -61,8 +63,12 @@ abstract class BaseHook {
         }
     }
 
-    fun Class<*>.allMethod(name: String): List<Method> {
+    fun Class<*>.allMethod(name: String): List<Member> {
         return declaredMethods.filter { it.name == name }
+    }
+
+    fun Class<*>.findConstructor(vararg parameters: Any): Constructor<*> {
+        return XposedHelpers.findConstructorExact(this, *parameters)
     }
 
     fun Class<*>.findMethod(name: String, vararg parameters: Any): Method {
