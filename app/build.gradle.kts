@@ -35,8 +35,8 @@ android {
         applicationId = "cn.tinyhai.auto_oral_calculation"
         minSdk = 27
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.6.1"
+        versionCode = 13
+        versionName = "1.6.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
