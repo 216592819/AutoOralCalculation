@@ -29,6 +29,7 @@ import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
 import java.lang.reflect.Constructor
+import java.text.SimpleDateFormat
 
 class SettingHook : BaseHook() {
 
@@ -150,7 +151,7 @@ class SettingHook : BaseHook() {
     }
 
     private fun showCustomScoreDialog(activity: Activity) {
-        var currentScore: Int = -1
+        var currentScore: Int? = null
 
         val targetScoreEditView = EditText(activity).apply {
             inputType = EditorInfo.TYPE_CLASS_NUMBER
@@ -190,7 +191,7 @@ class SettingHook : BaseHook() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
             override fun afterTextChanged(s: Editable) {
-                if (currentScore >= 0) {
+                if (currentScore != null) {
                     positiveButton.isEnabled = s.isNotEmpty()
                 }
             }
@@ -204,12 +205,16 @@ class SettingHook : BaseHook() {
         }
 
         positiveButton.setOnClickListener {
-            if (currentScore < 0) {
-                return@setOnClickListener
+            val curScore = currentScore ?: return@setOnClickListener
+            val targetScore = targetScoreEditView.text.toString().toLong().let {
+                if (it == curScore.toLong()) {
+                    Int.MAX_VALUE.toLong()
+                } else {
+                    it
+                }
             }
-            val targetScore = targetScoreEditView.text.toString().toInt()
             targetScoreEditView.text = null
-            val diff = targetScore - currentScore
+            val diff = (targetScore - curScore).coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
             LegacyApiService.postSavedExp(diff) {
                 it.onSuccess {
                     updateCurrentScore()
