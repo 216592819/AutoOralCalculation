@@ -205,7 +205,9 @@ class PracticeHook : BaseHook() {
     private fun hookCountDownTimer() {
         val countDownTimerClass = CountDownTimer::class.java
         val unhooks = arrayOf<Unhook?>(null)
-        countDownTimerClass.findConstructor(Long::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!).after { param ->
+        countDownTimerClass.findConstructor(
+            Long::class.javaPrimitiveType!!, Long::class.javaPrimitiveType!!
+        ).after { param ->
             val thisClass = param.thisObject::class.java
             if (!thisClass.name.startsWith(Classname.PRESENTER)) {
                 return@after
@@ -234,11 +236,12 @@ class PracticeHook : BaseHook() {
             addView(editText)
         }
 
-        val dialog = AlertDialog.Builder(context).setPositiveButton(android.R.string.ok) { d, _ ->
-            val targetCount =
-                kotlin.runCatching { editText.text.toString().toInt() }.getOrElse { 0 }
-            onConfirm(targetCount)
-        }.setNegativeButton(android.R.string.cancel, null).setTitle("请输入练习次数")
+        val dialog = AlertDialog.Builder(context)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val targetCount = editText.text.toString().toInt()
+                onConfirm(targetCount)
+            }.setNegativeButton(android.R.string.cancel, null)
+            .setTitle("请输入练习次数")
             .setView(container).show()
         val positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
         positiveButton.isEnabled = false
@@ -275,8 +278,12 @@ class PracticeHook : BaseHook() {
             addView(progressBar)
             addView(textView)
         }
-        val dialog = AlertDialog.Builder(context).setTitle("练习进度").setView(container)
-            .setNegativeButton("停止", null).setCancelable(false).setOnDismissListener {
+        val dialog = AlertDialog.Builder(context)
+            .setTitle("练习进度")
+            .setView(container)
+            .setNegativeButton("停止", null)
+            .setCancelable(false)
+            .setOnDismissListener {
                 onDismiss()
             }.show()
         return { current, target ->
@@ -532,7 +539,9 @@ class PracticeHook : BaseHook() {
                                 if (it !is CancellationException) {
                                     logI("upload exam failed: ${it.message}")
                                     if (delay > elapsed) {
-                                        executor.schedule(this, delay - elapsed, TimeUnit.MILLISECONDS)
+                                        executor.schedule(
+                                            this, delay - elapsed, TimeUnit.MILLISECONDS
+                                        )
                                     } else {
                                         pendingCount -= 1
                                         getExamInfoCondition.signalAll()

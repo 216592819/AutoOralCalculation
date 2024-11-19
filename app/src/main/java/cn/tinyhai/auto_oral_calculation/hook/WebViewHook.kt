@@ -24,8 +24,6 @@ import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
-import kotlin.math.roundToLong
-import kotlin.random.Random
 
 class WebViewHook : BaseHook() {
 
@@ -66,6 +64,22 @@ class WebViewHook : BaseHook() {
     @JavascriptInterface
     fun targetCostTime(costTime: Long) {
         appropriateCostTime.set(costTime - 100)
+    }
+
+    @JavascriptInterface
+    fun quickModeAwait(questionCnt: Int, callback: String) {
+        val loadUrl = loadUrl ?: return
+        val webView = webView ?: return
+        val appropriateCostTime = appropriateCostTime.get()
+        val waitTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
+            appropriateCostTime
+        } else {
+            getSimulateCostTime(questionCnt).coerceAtLeast(questionCnt * 200L)
+        }
+        logI("waitTime: $waitTime, callback: $callback")
+        webView.postDelayed({
+            injectJsCode("window.$callback && window.$callback();", loadUrl, webView)
+        }, waitTime)
     }
 
     private fun hookConsoleLog() {
@@ -275,11 +289,7 @@ class WebViewHook : BaseHook() {
 
     private fun getSimulateCostTime(questionCnt: Int): Long {
         val interval = PK.quickModeInterval
-        var costTime = 0L
-        repeat(questionCnt) {
-            costTime += (interval * (1 + Random.nextFloat() * 0.25)).roundToLong()
-        }
-        return costTime
+        return questionCnt * interval.toLong()
     }
 
     private fun hookDataEncrypt(caller: Class<*>) {
@@ -319,13 +329,7 @@ class WebViewHook : BaseHook() {
                     val costTime = if (PK.quickModeMustWin && appropriateCostTime > 0) {
                         appropriateCostTime
                     } else {
-                        getSimulateCostTime(questionCnt).let {
-                            if (it > 0) {
-                                it
-                            } else {
-                                questionCnt * 200L
-                            }
-                        }
+                        getSimulateCostTime(questionCnt).coerceAtLeast(questionCnt * 200L)
                     }
                     logI("originCostTime: ${json.get("costTime")}, costTime: $costTime")
                     json.put("costTime", costTime)
