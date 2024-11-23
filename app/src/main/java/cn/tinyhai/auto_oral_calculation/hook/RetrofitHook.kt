@@ -49,9 +49,9 @@ class RetrofitHook : BaseHook(), InvocationHandler {
         val httpUrl = XposedHelpers.callMethod(request, "url")
         val method = XposedHelpers.callMethod(request, "method")
         val pathSegments = XposedHelpers.callMethod(httpUrl, "pathSegments") as List<*>
-        val path = "/${pathSegments.take(3).joinToString("/") { it.toString() }}"
+        val path = "/${pathSegments.take(4).joinToString("/") { it.toString() }}"
 
-        if (!Practice.autoHonor || "/leo-math/android/exams" != path || method !in arrayOf("POST", "PUT")) {
+        if (!Practice.autoHonor || !path.startsWith("/leo-math/android/exams")|| method !in arrayOf("POST", "PUT")) {
             return XposedHelpers.callMethod(chain, "proceed", request)
         }
 

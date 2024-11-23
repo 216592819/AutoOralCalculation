@@ -29,7 +29,6 @@ import cn.tinyhai.auto_oral_calculation.util.mainHandler
 import de.robv.android.xposed.XC_MethodHook.Unhook
 import de.robv.android.xposed.XposedHelpers
 import java.lang.reflect.Constructor
-import java.text.SimpleDateFormat
 
 class SettingHook : BaseHook() {
 
@@ -68,7 +67,8 @@ class SettingHook : BaseHook() {
         val unhooks = arrayOf<Unhook?>(null)
         homeActivityClass.findMethod("onResume").after {
             runCatching {
-                val apiServiceCompanion = XposedHelpers.getStaticObjectField(apiServiceCompanionClass, "a")
+                val apiServiceCompanion =
+                    XposedHelpers.getStaticObjectField(apiServiceCompanionClass, "a")
                 val apiService = XposedHelpers.callMethod(apiServiceCompanion, "a")
                 OralApiService.init(apiService)
                 val legacyApiServiceCompanion =
@@ -117,20 +117,30 @@ class SettingHook : BaseHook() {
         val labelId =
             activity.resources.getIdentifier("text_label", "id", activity.packageName)
 
-        val customScoreSectionItem = buildCustomScoreSectionItem(activity, sectionItemConstructor, labelId)
+        val customScoreSectionItem =
+            buildCustomScoreSectionItem(activity, sectionItemConstructor, labelId)
         container.addView(customScoreSectionItem, 0)
         val moduleSectionItem = buildModuleSectionItem(activity, sectionItemConstructor, labelId)
         container.addView(moduleSectionItem, 0)
     }
 
-    private fun buildModuleSectionItem(activity: Activity, itemConstructor: Constructor<*>, labelId: Int): View {
+    private fun buildModuleSectionItem(
+        activity: Activity,
+        itemConstructor: Constructor<*>,
+        labelId: Int
+    ): View {
         val item = itemConstructor.newInstance(activity) as View
         return buildSectionItem(item, labelId, "口算糕手设置") {
             SettingsDialog(activity).show()
         }
     }
 
-    private fun buildSectionItem(item: View, labelId: Int, label: String, onClick: (() -> Unit)? = null): View {
+    private fun buildSectionItem(
+        item: View,
+        labelId: Int,
+        label: String,
+        onClick: (() -> Unit)? = null
+    ): View {
         val labelTv = item.findViewById<TextView>(labelId)
         labelTv.text = label
         item.layoutParams = LayoutParams(
@@ -143,7 +153,11 @@ class SettingHook : BaseHook() {
         return item
     }
 
-    private fun buildCustomScoreSectionItem(activity: Activity, itemConstructor: Constructor<*>, labelId: Int): View {
+    private fun buildCustomScoreSectionItem(
+        activity: Activity,
+        itemConstructor: Constructor<*>,
+        labelId: Int
+    ): View {
         val item = itemConstructor.newInstance(activity) as View
         return buildSectionItem(item, labelId, "自定义分数") {
             showCustomScoreDialog(activity)
@@ -154,13 +168,20 @@ class SettingHook : BaseHook() {
         var currentScore: Int? = null
 
         val targetScoreEditView = EditText(activity).apply {
-            inputType = EditorInfo.TYPE_CLASS_NUMBER
-            filters = arrayOf(InputFilter.LengthFilter(8))
-            hint = "请输入目标分数"
+            inputType = EditorInfo.TYPE_CLASS_NUMBER or EditorInfo.TYPE_NUMBER_FLAG_SIGNED
+            filters = arrayOf(InputFilter.LengthFilter(12))
+            hint = "请输入刷取分数"
         }
 
         val currentScoreTextView = TextView(activity).apply {
             text = "当前分数：加载中"
+            textSize = 16f
+            setTextColor(Color.rgb(0x33, 0x33, 0x33))
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+        }
+
+        val supposeScoreTextView = TextView(activity).apply {
+            text = "预计目标分数：加载中"
             textSize = 16f
             setTextColor(Color.rgb(0x33, 0x33, 0x33))
             layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
@@ -173,6 +194,7 @@ class SettingHook : BaseHook() {
             ).toInt()
             setPaddingRelative(padding, padding, padding, 0)
             addView(currentScoreTextView)
+            addView(supposeScoreTextView)
             addView(targetScoreEditView)
         }
 
@@ -191,8 +213,15 @@ class SettingHook : BaseHook() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
 
             override fun afterTextChanged(s: Editable) {
-                if (currentScore != null) {
-                    positiveButton.isEnabled = s.isNotEmpty()
+                val curScore = currentScore ?: return
+                val obtainScore = targetScoreEditView.text.toString().toLongOrNull()
+                    ?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
+                positiveButton.isEnabled = obtainScore != null
+                if (obtainScore != null) {
+                    val suppose = curScore + obtainScore.toInt()
+                    supposeScoreTextView.text = "预计目标分数：$suppose"
+                } else {
+                    supposeScoreTextView.text = "预计目标分数：$curScore"
                 }
             }
         })
@@ -201,21 +230,17 @@ class SettingHook : BaseHook() {
             getCurrentScore {
                 currentScore = it
                 currentScoreTextView.text = "当前分数：$currentScore"
+                supposeScoreTextView.text = "预计目标分数：$currentScore"
             }
         }
 
         positiveButton.setOnClickListener {
-            val curScore = currentScore ?: return@setOnClickListener
-            val targetScore = targetScoreEditView.text.toString().toLong().let {
-                if (it == curScore.toLong()) {
-                    Int.MAX_VALUE.toLong()
-                } else {
-                    it
-                }
-            }
+            currentScore ?: return@setOnClickListener
+            val obtainScore = targetScoreEditView.text.toString()
+                .toLong()
+                .coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
             targetScoreEditView.text = null
-            val diff = (targetScore - curScore).coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
-            LegacyApiService.postSavedExp(diff) {
+            LegacyApiService.postSavedExp(obtainScore.toInt()) {
                 it.onSuccess {
                     updateCurrentScore()
                 }.onFailure {

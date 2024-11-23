@@ -182,17 +182,20 @@ class PracticeHook : BaseHook() {
                         XposedHelpers.callMethod(data, "setStrokes", strokes)
                         totalTime += costTime
                     }
-                    with(modelWrapper) {
-                        model?.run {
-                            val exerciseType = getExerciseType()
-                            val exerciseTypeInt =
-                                XposedHelpers.getIntField(exerciseType, "exerciseType")
-                            val intent = activity.intent
-                            val uri = buildUri(totalTime.toLong(), dataList) as Uri
-                            gotoResult(activity, intent, uri, exerciseTypeInt)
-                            activity.finish()
+                    mainHandler.postDelayed({
+                        with(modelWrapper) {
+                            model?.run {
+                                val exerciseType = getExerciseType()
+                                val exerciseTypeInt =
+                                    XposedHelpers.getIntField(exerciseType, "exerciseType")
+                                val intent = activity.intent
+                                val uri = buildUri(totalTime.toLong(), dataList) as Uri
+                                gotoResult(activity, intent, uri, exerciseTypeInt)
+                                activity.finish()
+
+                            }
                         }
-                    }
+                    }, totalTime.toLong())
                 }.onFailure {
                     logI(it)
                 }
@@ -300,13 +303,13 @@ class PracticeHook : BaseHook() {
 
     private fun testDelay(keyPointId: String, limit: Int) {
         thread {
-            var delay = 800L
+            var delay = 10000L
             var lastReqTime: Long
             val lock = ReentrantLock()
             val condition = lock.newCondition()
             var active = true
             var count = 0
-            Thread.sleep(1000L)
+            Thread.sleep(delay)
             while (active) {
                 lock.withLock {
                     lastReqTime = SystemClock.elapsedRealtime()
@@ -315,13 +318,14 @@ class PracticeHook : BaseHook() {
                         lock.withLock {
                             if (it.isSuccess) {
                                 count++
-                                if (count >= 30) {
-                                    active = false
-                                    logI("final delay: $delay")
+                                if (count >= 10) {
+                                    count = 0
+                                    delay -= 500
+                                    logI("cur delay: $delay")
                                 }
                             } else {
-                                count = 0
-                                delay += 50
+                                active = false
+                                logI("final delay: $delay")
                             }
                             condition.signalAll()
                         }
@@ -358,6 +362,7 @@ class PracticeHook : BaseHook() {
 
             OralApiService.setup(coroutineContext)
             if (Practice.autoHonor) {
+//                testDelay(keyPointId, limit)
                 showEditAlertDialog(activity as Context) { targetCount ->
                     val onProgressChange = showProgressDialog(activity) {
                         helper?.stopHonor()
@@ -440,7 +445,7 @@ class PracticeHook : BaseHook() {
 
         private fun doWork() {
             var lastReqTime: Long
-            var waitTime = 33L
+            var waitTime = 5000L
             var reqSuccessCount = 0
             while (active && !Thread.interrupted()) {
                 try {
@@ -466,7 +471,7 @@ class PracticeHook : BaseHook() {
                                     handleExamVO(it)
                                     reqSuccessCount += 1
                                     if (reqSuccessCount >= 10) {
-                                        waitTime = waitTime.minus(500).coerceAtLeast(33)
+                                        waitTime = waitTime.minus(1000).coerceAtLeast(2033)
                                         logI("waitTime decrease to $waitTime")
                                         reqSuccessCount = 0
                                     }
@@ -530,39 +535,25 @@ class PracticeHook : BaseHook() {
         private fun buildAndUploadExamResult(examVO: Any) {
             val (examId, delay) = buildExamResult(examVO)
             val uploadReqTime = SystemClock.elapsedRealtime()
-            val runnable = object : Runnable {
-                override fun run() {
-                    OralApiService.uploadExamResult(examId, examVO) {
-                        val elapsed = SystemClock.elapsedRealtime() - uploadReqTime
-                        lock.withLock {
-                            it.onFailure {
-                                if (it !is CancellationException) {
-                                    logI("upload exam failed: ${it.message}")
-                                    if (delay > elapsed) {
-                                        executor.schedule(
-                                            this, delay - elapsed, TimeUnit.MILLISECONDS
-                                        )
-                                    } else {
-                                        pendingCount -= 1
-                                        getExamInfoCondition.signalAll()
-                                        logI("upload exam failed after delay: $delay")
-                                    }
-                                } else {
-                                    pendingCount -= 1
-                                    getExamInfoCondition.signalAll()
-                                }
-                            }.onSuccess {
-                                successCount += 1
-                                pendingCount -= 1
-                                getExamInfoCondition.signalAll()
-                                logI("upload exam elapsed: $elapsed")
-                                onProgress(successCount, targetCount)
+            val runnable = Runnable {
+                OralApiService.uploadExamResult(examId, examVO) {
+                    val elapsed = SystemClock.elapsedRealtime() - uploadReqTime
+                    lock.withLock {
+                        pendingCount -= 1
+                        getExamInfoCondition.signalAll()
+                        it.onFailure {
+                            if (it !is CancellationException) {
+                                logI("upload exam failed: ${it.message}")
                             }
+                        }.onSuccess {
+                            successCount += 1
+                            logI("upload exam elapsed: $elapsed")
+                            onProgress(successCount, targetCount)
                         }
                     }
                 }
             }
-            runnable.run()
+            executor.schedule(runnable, delay, TimeUnit.MILLISECONDS)
         }
     }
 }
