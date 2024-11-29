@@ -38,6 +38,8 @@ object Classname {
 
     const val LIFECYCLE_OWNER_KT = "androidx.lifecycle.LifecycleOwnerKt"
 
+    const val VERIFY_UTIL_4_96_0 = "com.fenbi.android.leo.utils.w4"
+
     const val RETROFIT = "retrofit2.Retrofit"
 
     const val INTERCEPTOR = "okhttp3.Interceptor"

@@ -6,6 +6,7 @@ import cn.tinyhai.auto_oral_calculation.XposedInit
 
 class StringRes(resources: Resources) {
     val KEY_ALWAYS_TRUE_ANSWER = resources.getString(R.string.key_always_true_answer)
+    val KEY_DOUBLE_NICKNAME_LENGTH = resources.getString(R.string.key_double_nickname_length)
     val KEY_AUTO_HONOR = resources.getString(R.string.key_auto_honor)
     val KEY_AUTO_PRACTICE = resources.getString(R.string.key_auto_practice)
     val KEY_AUTO_PRACTICE_QUICK = resources.getString(R.string.key_auto_practice_quick)

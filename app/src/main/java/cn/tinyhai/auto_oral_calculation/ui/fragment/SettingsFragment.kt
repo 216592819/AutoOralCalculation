@@ -20,6 +20,7 @@ class SettingsFragment : PreferenceFragment(), OnPreferenceClickListener {
     private class Holder(manager: PreferenceManager, stringRes: StringRes) {
         val alwaysTrue: SwitchPreference =
             manager.findPreference(stringRes.KEY_ALWAYS_TRUE_ANSWER) as SwitchPreference
+        val doubleNicknameLength: SwitchPreference = manager.findPreference(stringRes.KEY_DOUBLE_NICKNAME_LENGTH) as SwitchPreference
         val autoHonor: SwitchPreference = manager.findPreference(stringRes.KEY_AUTO_HONOR) as SwitchPreference
         val autoPractice: SwitchPreference =
             manager.findPreference(stringRes.KEY_AUTO_PRACTICE) as SwitchPreference

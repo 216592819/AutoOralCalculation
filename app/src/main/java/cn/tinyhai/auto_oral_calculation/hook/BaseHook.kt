@@ -95,6 +95,7 @@ abstract class BaseHook {
             WebViewHook().startHookCatching()
             SettingHook().startHookCatching()
             RetrofitHook().startHookCatching()
+            NicknameLengthHook().startHookCatching()
         }
     }
 }

@@ -12,7 +12,8 @@ private val modulePrefs by lazy {
 }
 
 object Common {
-    val alwaysTrue get() = modulePrefs.getBoolean("always_true_answer", true)
+    val alwaysTrue get() = modulePrefs.getBoolean(moduleStringRes.KEY_ALWAYS_TRUE_ANSWER, true)
+    val doubleNicknameLength get() = modulePrefs.getBoolean(moduleStringRes.KEY_DOUBLE_NICKNAME_LENGTH, true)
 }
 
 object Practice {
