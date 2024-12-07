@@ -12,6 +12,8 @@ import java.lang.reflect.Method
 
 abstract class BaseHook {
 
+    abstract val name: String
+
     private fun XC_MethodHook.MethodHookParam.runBlockCatching(block: (XC_MethodHook.MethodHookParam) -> Unit) {
         kotlin.runCatching {
             block(this)
@@ -79,7 +81,9 @@ abstract class BaseHook {
         return kotlin.runCatching {
             startHook()
         }.onFailure {
+            logI("failure in $name >>>>>>")
             logI(it)
+            logI("failure in $name <<<<<<")
         }
     }
 

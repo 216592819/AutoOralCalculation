@@ -32,6 +32,9 @@ import java.lang.reflect.Constructor
 
 class SettingHook : BaseHook() {
 
+    override val name: String
+        get() = "SettingHook"
+
     private var shouldStartSettings = false
 
     override fun startHook() {

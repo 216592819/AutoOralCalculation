@@ -1,20 +1,20 @@
 package cn.tinyhai.auto_oral_calculation.hook
 
-import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.util.Common
+import java.nio.charset.Charset
 
 class NicknameLengthHook : BaseHook() {
+    override val name: String
+        get() = "NicknameLengthHook"
+
     override fun startHook() {
-        val verifyUtilClass = findClass(Classname.VERIFY_UTIL_4_96_0)
-        verifyUtilClass.declaredMethods.first {
-            it.returnType == Int::class.javaPrimitiveType && it.parameterCount == 1 && it.parameterTypes[0] == String::class.java
-        }.after { param ->
-            if (!Common.doubleNicknameLength) {
+        val gbk = Charset.forName("GBK")
+        String::class.java.findMethod("getBytes", Charset::class.java).after { param ->
+            if (!Common.doubleNicknameLength || param.args[0] != gbk) {
                 return@after
             }
-            val result = param.result
-            if (result is Int) {
-                param.result = (result - 1).coerceAtLeast(0) / 2
+            (param.result as? ByteArray)?.let {
+                param.result = it.copyOf(it.size / 2)
             }
         }
     }

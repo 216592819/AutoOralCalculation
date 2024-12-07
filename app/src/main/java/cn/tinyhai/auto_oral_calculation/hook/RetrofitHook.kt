@@ -9,6 +9,10 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
 class RetrofitHook : BaseHook(), InvocationHandler {
+
+    override val name: String
+        get() = "RetrofitHook"
+
     override fun startHook() {
         val retrofitClass = findClass(Classname.RETROFIT)
         val apiServiceClass = findClass(Classname.ORAL_API_SERVICE)

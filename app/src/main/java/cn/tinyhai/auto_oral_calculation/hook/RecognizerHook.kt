@@ -4,6 +4,10 @@ import cn.tinyhai.auto_oral_calculation.Classname
 import cn.tinyhai.auto_oral_calculation.util.Common
 
 class RecognizerHook : BaseHook() {
+
+    override val name: String
+        get() = "RecognizerHook"
+
     override fun startHook() {
         val mathScriptRecognizerClass = findClass(Classname.MATH_SCRIPT_RECOGNIZER)
         mathScriptRecognizerClass.findMethod(

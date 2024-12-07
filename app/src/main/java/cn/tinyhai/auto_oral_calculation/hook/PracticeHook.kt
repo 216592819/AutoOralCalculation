@@ -104,6 +104,9 @@ class PracticeHook : BaseHook() {
         }
     }
 
+    override val name: String
+        get() = "PracticeHook"
+
     private val executor: ScheduledExecutorService by lazy {
         ScheduledThreadPoolExecutor(5, DiscardPolicy())
     }

@@ -27,6 +27,9 @@ import kotlin.concurrent.thread
 
 class WebViewHook : BaseHook() {
 
+    override val name: String
+        get() = "WebViewHook"
+
     private val standardJs by lazy {
         moduleRes.assets.open("js/standard.js")
             .bufferedReader().use { it.readText() }
@@ -304,7 +307,8 @@ class WebViewHook : BaseHook() {
                 return@before
             }
             val json =
-                kotlin.runCatching { JSONObject(Base64.decode(base64, 0).decodeToString()) }.getOrNull()
+                kotlin.runCatching { JSONObject(Base64.decode(base64, 0).decodeToString()) }
+                    .getOrNull()
                     ?: return@before
             if (!json.has("pkIdStr")) {
                 return@before
