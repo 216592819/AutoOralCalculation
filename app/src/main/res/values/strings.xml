@@ -17,4 +17,5 @@
     <string name="key_goto_settings">goto_settings</string>
     <string name="key_debug">debug</string>
     <string name="key_double_nickname_length">double_nickname_length</string>
+    <string name="key_remove_restriction_on_nickname">remove_restriction_on_nickname</string>
 </resources>

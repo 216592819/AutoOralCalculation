@@ -50,3 +50,5 @@ const val MODULE_PREFS_NAME = "auto_oral_calculation"
 const val HOST_PACKAGE_NAME = "com.fenbi.android.leo"
 
 const val KEY_START_SETTINGS = "key_start_settings"
+
+const val PATTERN_NICKNAME = "[a-zA-Z0-9_\\-\\u4e00-\\u9fa5]*"
