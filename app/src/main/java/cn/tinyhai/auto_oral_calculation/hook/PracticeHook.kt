@@ -137,7 +137,7 @@ class PracticeHook : BaseHook() {
                         startExercise()
                         val answer = getAnswers()?.get(0).toString()
                         commitAnswer(answer)
-                        nextQuestion(true, strokes.toList())
+                        nextQuestion(true, answer.strokes.toList())
                     }
                 }
             }
@@ -175,14 +175,11 @@ class PracticeHook : BaseHook() {
                     var totalTime = 0
                     dataList.subList(1, dataList.size - 1).forEach { data ->
                         val answers = XposedHelpers.getObjectField(data, "rightAnswers") as? List<*>
-                        answers?.let {
-                            if (it.isNotEmpty()) {
-                                XposedHelpers.callMethod(data, "setUserAnswer", it[0])
-                            }
-                        }
+                        val answer = answers?.firstOrNull()?.toString() ?: ""
+                        XposedHelpers.callMethod(data, "setUserAnswer", answer)
                         val costTime = Random.nextInt(150, 250)
                         XposedHelpers.callMethod(data, "setCostTime", costTime)
-                        XposedHelpers.callMethod(data, "setStrokes", strokes)
+                        XposedHelpers.callMethod(data, "setStrokes", answer.strokes)
                         totalTime += costTime
                     }
                     mainHandler.postDelayed({
@@ -195,7 +192,6 @@ class PracticeHook : BaseHook() {
                                 val uri = buildUri(totalTime.toLong(), dataList) as Uri
                                 gotoResult(activity, intent, uri, exerciseTypeInt)
                                 activity.finish()
-
                             }
                         }
                     }, totalTime.toLong())
@@ -520,12 +516,11 @@ class PracticeHook : BaseHook() {
             var totalTime = 0L
             questions.forEach {
                 val answers = XposedHelpers.getObjectField(it, "answers") as? List<*>
-                if (!answers.isNullOrEmpty()) {
-                    XposedHelpers.callMethod(it, "setUserAnswer", answers[0])
-                }
+                val answer = answers?.firstOrNull()?.toString() ?: ""
+                XposedHelpers.callMethod(it, "setUserAnswer", answer)
                 val costTime = Random.nextInt(150, 250)
                 XposedHelpers.callMethod(it, "setCostTime", costTime)
-                XposedHelpers.callMethod(it, "setScript", strokes.toJsonString())
+                XposedHelpers.callMethod(it, "setScript", answer.strokes.toJsonString())
                 XposedHelpers.callMethod(it, "setStatus", 1)
                 totalTime += costTime
             }

@@ -319,8 +319,9 @@ class WebViewHook : BaseHook() {
             runCatching {
                 val questions = json.getJSONArray("questions")
                 for (i in 0 until questions.length()) {
-                    val pathPoints = pathPoints.toJSONArray()
                     val question = questions.getJSONObject(i)
+                    val answer = question.getString("userAnswer") ?: ""
+                    val pathPoints = answer.pathPoints.toJSONArray()
                     val curTrueAnswer = question.optJSONObject("curTrueAnswer")
                     curTrueAnswer?.put("pathPoints", pathPoints)
                     if (question.has("script")) {

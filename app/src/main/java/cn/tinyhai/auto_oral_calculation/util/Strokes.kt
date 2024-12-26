@@ -12,16 +12,18 @@ fun install() {
     }
 }
 
-val nativeStrokes: List<Array<DoubleArray>>
+val String.nativeStrokes: List<Array<DoubleArray>>
     external get
 
-val strokes: List<Array<PointF>> get() {
+val String.strokes: List<Array<PointF>> get() {
     return nativeStrokes.map {
         it.map { PointF(it[0].toFloat(), it[1].toFloat()) }.toTypedArray()
+    }.also {
+        logI("answer: $this, strokes: ${it.size}")
     }
 }
 
-val pathPoints get() = nativeStrokes
+val String.pathPoints get() = nativeStrokes
 
 fun List<Array<*>>.toJsonString(): String {
     return toJSONArray().toString()
